@@ -11,7 +11,7 @@ Players control a randomly generated animal character that sprints down an infin
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Architecture Overview](#architecture-overview)
-- [Core Systems](#core-systems)
+- [Core Systems](#core-system)
   - [Game Loop](#game-loop)
   - [Player Controller](#player-controller)
   - [World Generation](#world-generation)
@@ -247,5 +247,6 @@ Requires: **ES Modules**, **Import Maps**, **WebGL 2.0**
 ## License
 
 This project is provided as-is for educational and personal use.
-#   S u b w a y - h o o p e r - g a m e  
+#   S u b w a y - h o o p e r - g a m e 
+ 
  
