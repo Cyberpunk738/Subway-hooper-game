@@ -131,3 +131,79 @@ button:hover {
 .hidden {
 	display: none !important;
 }
+
+/* --- MOBILE CONTROLS --- */
+#mobile-controls {
+	position: absolute;
+	bottom: 30px;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: 16px;
+	align-items: center;
+	pointer-events: auto;
+	z-index: 20;
+}
+
+.mobile-btn {
+	width: 64px;
+	height: 64px;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.2);
+	backdrop-filter: blur(8px);
+	border: 2px solid rgba(255, 255, 255, 0.5);
+	color: #fff;
+	font-size: 2rem;
+	font-family: var(--pixel-font);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	transition: background 0.15s, transform 0.1s;
+	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
+}
+
+.mobile-btn:active {
+	background: rgba(255, 255, 255, 0.45);
+	transform: translateY(2px) scale(0.95);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.mobile-jump-btn {
+	width: 76px;
+	height: 76px;
+	font-size: 2.4rem;
+	background: rgba(78, 205, 196, 0.3);
+	border-color: rgba(78, 205, 196, 0.6);
+}
+
+.mobile-jump-btn:active {
+	background: rgba(78, 205, 196, 0.55);
+}
+
+/* Hide keyboard instructions on touch/mobile devices */
+@media (max-width: 768px), (pointer: coarse) {
+	#instructions {
+		display: none;
+	}
+
+	.title {
+		font-size: 3.5rem;
+	}
+
+	.subtitle {
+		font-size: 1.8rem;
+	}
+
+	.center-screen {
+		padding: 1.5rem 2rem;
+	}
+
+	button {
+		font-size: 2rem;
+		padding: 0.8rem 1.5rem;
+	}
+}

@@ -3,7 +3,8 @@
 
 <head>
 	<meta charset="UTF-8" />
-	<title>SUBWAY SUPER HOPPER GAME </title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+	<title>SUBWAY SUPER HOPPER GAME</title>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&amp;display=swap" />
 	<link rel="stylesheet" href="./style.css" />
 </head>
@@ -31,6 +32,12 @@
 			<h1 class="title">GAME OVER</h1>
 			<p class="subtitle">SCORE: <span id="final-score">0</span></p>
 			<button id="restart-btn">TRY AGAIN</button>
+		</div>
+		<!-- Mobile On-Screen Controls -->
+		<div id="mobile-controls" class="hidden">
+			<button id="mobile-left" class="mobile-btn" aria-label="Move Left">←</button>
+			<button id="mobile-jump" class="mobile-btn mobile-jump-btn" aria-label="Jump">↑</button>
+			<button id="mobile-right" class="mobile-btn" aria-label="Move Right">→</button>
 		</div>
 	</div>
 

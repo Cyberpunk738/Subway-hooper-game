@@ -125,6 +125,12 @@ function init() {
 	// Input Handler
 	document.addEventListener("keydown", handleInput);
 
+	// Touch Swipe Handler
+	initTouchControls();
+
+	// On-screen Mobile Buttons
+	initMobileButtons();
+
 	// UI Handlers
 	document.getElementById("start-btn").addEventListener("click", startGame);
 	document.getElementById("restart-btn").addEventListener("click", startGame);
@@ -394,6 +400,119 @@ function handleInput(e) {
 			state.jumpVel = CONFIG.jumpPower;
 		}
 	}
+}
+
+// --- TOUCH / SWIPE CONTROLS ---
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+const SWIPE_THRESHOLD = 30; // minimum px distance for a swipe
+const SWIPE_TIME_LIMIT = 400; // max ms for a valid swipe
+
+function initTouchControls() {
+	const el = document.getElementById("game-container");
+
+	el.addEventListener("touchstart", (e) => {
+		const touch = e.touches[0];
+		touchStartX = touch.clientX;
+		touchStartY = touch.clientY;
+		touchStartTime = Date.now();
+	}, { passive: true });
+
+	el.addEventListener("touchend", (e) => {
+		const touch = e.changedTouches[0];
+		const dx = touch.clientX - touchStartX;
+		const dy = touch.clientY - touchStartY;
+		const dt = Date.now() - touchStartTime;
+
+		// Only register swipes within time limit
+		if (dt > SWIPE_TIME_LIMIT) return;
+
+		const absDx = Math.abs(dx);
+		const absDy = Math.abs(dy);
+
+		// Must exceed threshold
+		if (absDx < SWIPE_THRESHOLD && absDy < SWIPE_THRESHOLD) {
+			// Tap — treat as jump
+			if (state.isPlaying && !state.isJumping) {
+				state.isJumping = true;
+				state.jumpVel = CONFIG.jumpPower;
+			}
+			return;
+		}
+
+		if (!state.isPlaying) return;
+
+		if (absDx > absDy) {
+			// Horizontal swipe
+			if (dx < 0 && state.lane > -1) {
+				state.lane--;
+			} else if (dx > 0 && state.lane < 1) {
+				state.lane++;
+			}
+		} else {
+			// Vertical swipe
+			if (dy < 0 && !state.isJumping) {
+				// Swipe up = jump
+				state.isJumping = true;
+				state.jumpVel = CONFIG.jumpPower;
+			}
+		}
+	}, { passive: true });
+
+	// Prevent scrolling / pull-to-refresh while playing
+	document.addEventListener("touchmove", (e) => {
+		if (state.isPlaying) {
+			e.preventDefault();
+		}
+	}, { passive: false });
+}
+
+// --- ON-SCREEN MOBILE BUTTONS ---
+function initMobileButtons() {
+	const leftBtn = document.getElementById("mobile-left");
+	const rightBtn = document.getElementById("mobile-right");
+	const jumpBtn = document.getElementById("mobile-jump");
+
+	if (!leftBtn || !rightBtn || !jumpBtn) return;
+
+	const addMobileEvent = (btn, action) => {
+		btn.addEventListener("touchstart", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			action();
+		}, { passive: false });
+		// Also support click for desktop testing
+		btn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			action();
+		});
+	};
+
+	addMobileEvent(leftBtn, () => {
+		if (state.isPlaying && state.lane > -1) state.lane--;
+	});
+
+	addMobileEvent(rightBtn, () => {
+		if (state.isPlaying && state.lane < 1) state.lane++;
+	});
+
+	addMobileEvent(jumpBtn, () => {
+		if (state.isPlaying && !state.isJumping) {
+			state.isJumping = true;
+			state.jumpVel = CONFIG.jumpPower;
+		}
+	});
+
+	// Show mobile controls on touch devices
+	const mobileControls = document.getElementById("mobile-controls");
+	if (mobileControls && isTouchDevice()) {
+		mobileControls.classList.remove("hidden");
+	}
+}
+
+function isTouchDevice() {
+	return "ontouchstart" in window || navigator.maxTouchPoints > 0;
 }
 
 let lastTime = 0;
