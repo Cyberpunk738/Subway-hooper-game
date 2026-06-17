@@ -1,4 +1,10 @@
 import * as THREE from "three";
+import {
+	initSupabase,
+	submitScore,
+	getTopScores,
+	getPlayerBest
+} from "./supabase.js";
 
 // --- CONFIG ---
 const CONFIG = {
@@ -12,10 +18,24 @@ const CONFIG = {
 	fogDensity: 0.02
 };
 
+// --- PLAYER IDENTITY ---
+const STORAGE_KEY = "subway_hopper_username";
+
+function getSavedUsername() {
+	return localStorage.getItem(STORAGE_KEY);
+}
+
+function saveUsername(name) {
+	localStorage.setItem(STORAGE_KEY, name);
+}
+
+let currentUsername = null;
+
 // --- STATE ---
 let state = {
 	isPlaying: false,
 	score: 0,
+	coins: 0,
 	speed: CONFIG.baseSpeed,
 	lane: 0, // -1, 0, 1
 	currentLaneX: 0,
@@ -31,6 +51,33 @@ const elScoreFinal = document.getElementById("final-score");
 const uiScore = document.getElementById("score-display");
 const uiStart = document.getElementById("start-screen");
 const uiGameOver = document.getElementById("game-over-screen");
+
+// Username Modal Elements
+const uiUsernameModal = document.getElementById("username-modal");
+const elUsernameInput = document.getElementById("username-input");
+const elUsernameError = document.getElementById("username-error");
+const btnSetName = document.getElementById("set-name-btn");
+const btnPlayAnon = document.getElementById("play-anon-btn");
+
+// Leaderboard Elements
+const uiLeaderboardOverlay = document.getElementById("leaderboard-overlay");
+const elLeaderboardList = document.getElementById("leaderboard-list");
+const btnCloseLB = document.getElementById("close-lb-btn");
+const btnLeaderboard = document.getElementById("leaderboard-btn");
+const btnLeaderboardGO = document.getElementById("leaderboard-btn-go");
+
+// Username Badge
+const uiBadge = document.getElementById("username-badge");
+const elBadgeName = document.getElementById("badge-name");
+
+// Coin Display
+const uiCoinDisplay = document.getElementById("coin-display");
+const elCoins = document.getElementById("coins");
+const elFinalCoins = document.getElementById("final-coins");
+
+// Personal Best
+const uiPersonalBest = document.getElementById("personal-best");
+const elBestScore = document.getElementById("best-score");
 
 // --- THREE.JS GLOBALS ---
 let scene,
@@ -79,8 +126,144 @@ const THEMES = [
 	}
 ];
 
+// =============================================
+// USERNAME MODAL LOGIC
+// =============================================
+
+function showUsernameModal() {
+	uiUsernameModal.classList.remove("hidden");
+	uiStart.classList.add("hidden");
+	elUsernameInput.value = "";
+	elUsernameError.textContent = "";
+	elUsernameInput.focus();
+}
+
+function hideUsernameModal() {
+	uiUsernameModal.classList.add("hidden");
+	uiStart.classList.remove("hidden");
+}
+
+function setPlayerName(name) {
+	currentUsername = name;
+	saveUsername(name);
+	updateBadgeName();
+	hideUsernameModal();
+}
+
+function updateBadgeName() {
+	if (currentUsername) {
+		elBadgeName.textContent = currentUsername;
+	}
+}
+
+function initUsernameHandlers() {
+	btnSetName.addEventListener("click", () => {
+		const raw = elUsernameInput.value.trim();
+		if (raw.length < 2) {
+			elUsernameError.textContent = "NAME MUST BE AT LEAST 2 CHARACTERS";
+			return;
+		}
+		if (raw.length > 16) {
+			elUsernameError.textContent = "NAME MUST BE 16 CHARACTERS OR LESS";
+			return;
+		}
+		// Sanitize: only allow alphanumeric, spaces, underscores, dashes
+		const sanitized = raw.replace(/[^a-zA-Z0-9 _\-]/g, "");
+		if (sanitized.length < 2) {
+			elUsernameError.textContent = "USE ONLY LETTERS, NUMBERS, SPACES";
+			return;
+		}
+		setPlayerName(sanitized);
+	});
+
+	btnPlayAnon.addEventListener("click", () => {
+		// Generate a unique anonymous tag
+		const tag = Math.floor(1000 + Math.random() * 9000);
+		setPlayerName(`Anonymous#${tag}`);
+	});
+
+	// Allow Enter key to submit name
+	elUsernameInput.addEventListener("keydown", (e) => {
+		if (e.code === "Enter") {
+			btnSetName.click();
+		}
+	});
+}
+
+// =============================================
+// LEADERBOARD LOGIC
+// =============================================
+
+async function openLeaderboard() {
+	uiLeaderboardOverlay.classList.remove("hidden");
+	elLeaderboardList.innerHTML = '<li class="lb-loading">LOADING...</li>';
+
+	const scores = await getTopScores(10);
+
+	if (scores.length === 0) {
+		elLeaderboardList.innerHTML = '<li class="lb-empty">NO SCORES YET — BE THE FIRST!</li>';
+		return;
+	}
+
+	const rankIcons = ["🥇", "🥈", "🥉"];
+	elLeaderboardList.innerHTML = scores
+		.map((entry, i) => {
+			const rank = rankIcons[i] || `${i + 1}`;
+			return `<li>
+				<span class="lb-rank">${rank}</span>
+				<span class="lb-name">${escapeHTML(entry.username)}</span>
+				<span class="lb-score">${entry.score.toLocaleString()}</span>
+			</li>`;
+		})
+		.join("");
+}
+
+function closeLeaderboard() {
+	uiLeaderboardOverlay.classList.add("hidden");
+}
+
+function escapeHTML(str) {
+	const div = document.createElement("div");
+	div.textContent = str;
+	return div.innerHTML;
+}
+
+function initLeaderboardHandlers() {
+	btnCloseLB.addEventListener("click", closeLeaderboard);
+	btnLeaderboard.addEventListener("click", openLeaderboard);
+	btnLeaderboardGO.addEventListener("click", openLeaderboard);
+
+	// Close on overlay background click
+	uiLeaderboardOverlay.addEventListener("click", (e) => {
+		if (e.target === uiLeaderboardOverlay) closeLeaderboard();
+	});
+}
+
+// =============================================
+// SCORE SUBMISSION
+// =============================================
+
+async function handleScoreSubmission(finalScore) {
+	if (!currentUsername || finalScore < 1) return;
+
+	// Submit score (fire and forget — non-blocking)
+	submitScore(currentUsername, finalScore);
+
+	// Show personal best
+	const best = await getPlayerBest(currentUsername);
+	if (best !== null) {
+		elBestScore.textContent = best.toLocaleString();
+		uiPersonalBest.classList.remove("hidden");
+	} else {
+		uiPersonalBest.classList.add("hidden");
+	}
+}
+
 // --- INIT ---
 function init() {
+	// Initialize Supabase
+	initSupabase();
+
 	// Scene
 	scene = new THREE.Scene();
 
@@ -134,6 +317,21 @@ function init() {
 	// UI Handlers
 	document.getElementById("start-btn").addEventListener("click", startGame);
 	document.getElementById("restart-btn").addEventListener("click", startGame);
+
+	// Username & Leaderboard Handlers
+	initUsernameHandlers();
+	initLeaderboardHandlers();
+
+	// Check if user already has a saved username
+	const saved = getSavedUsername();
+	if (saved) {
+		currentUsername = saved;
+		updateBadgeName();
+		// Show start screen normally
+	} else {
+		// First visit — show username modal
+		showUsernameModal();
+	}
 }
 
 function onWindowResize() {
@@ -251,6 +449,36 @@ function createDecorationMesh() {
 	return group;
 }
 
+function createCoinMesh() {
+	const group = new THREE.Group();
+
+	// Golden spinning coin — octahedron for a gem-like look
+	const coinGeo = new THREE.OctahedronGeometry(0.35, 0);
+	const coinMat = new THREE.MeshStandardMaterial({
+		color: 0xffd700,
+		emissive: 0xffaa00,
+		emissiveIntensity: 0.3,
+		flatShading: true,
+		metalness: 0.8,
+		roughness: 0.2
+	});
+	const coin = new THREE.Mesh(coinGeo, coinMat);
+	coin.castShadow = true;
+	group.add(coin);
+
+	// Small glow ring around the coin
+	const ringGeo = new THREE.TorusGeometry(0.45, 0.04, 8, 16);
+	const ringMat = new THREE.MeshBasicMaterial({
+		color: 0xffd700,
+		transparent: true,
+		opacity: 0.4
+	});
+	const ring = new THREE.Mesh(ringGeo, ringMat);
+	group.add(ring);
+
+	return group;
+}
+
 function generateWorldChunk(zPos) {
 	// Create a row (chunk)
 	// We recycle logic here: simpler to just managing list of objects
@@ -295,18 +523,29 @@ function spawnRow() {
 
 	// Obstacle Logic
 	// Chance to spawn obstacle
+	let obstacleLane = null;
 	if (Math.random() > 0.3) {
-		// 70% chance of empty or obstacle
-		// Pick lane
+		// 70% chance of obstacle
 		let lane = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
-
-		// Don't block impossible (3 obstacles in a row is unfair if too fast, but simple logic for now)
-		// Avoid placing obstacle in same lane immediately?
+		obstacleLane = lane;
 
 		const obs = createObstacleMesh();
 		obs.position.set(lane * CONFIG.laneWidth, 0.5, zStart);
 		scene.add(obs);
 		worldObjects.push({ mesh: obs, type: "obstacle", lane: lane, passed: false });
+	}
+
+	// Coin Logic — 40% chance, never on same lane as obstacle in this row
+	if (Math.random() > 0.6) {
+		let coinLane = Math.floor(Math.random() * 3) - 1;
+		// Avoid placing coin on top of obstacle
+		if (coinLane === obstacleLane) {
+			coinLane = coinLane === 1 ? -1 : coinLane + 1;
+		}
+		const coinMesh = createCoinMesh();
+		coinMesh.position.set(coinLane * CONFIG.laneWidth, 1.0, zStart);
+		scene.add(coinMesh);
+		worldObjects.push({ mesh: coinMesh, type: "coin", lane: coinLane });
 	}
 }
 
@@ -317,6 +556,7 @@ function startGame() {
 	state = {
 		isPlaying: true,
 		score: 0,
+		coins: 0,
 		speed: CONFIG.baseSpeed,
 		lane: 0,
 		currentLaneX: 0,
@@ -330,7 +570,17 @@ function startGame() {
 	uiStart.classList.add("hidden");
 	uiGameOver.classList.add("hidden");
 	uiScore.classList.remove("hidden");
+	uiPersonalBest.classList.add("hidden");
 	elScore.innerText = "0";
+
+	// Coin display
+	uiCoinDisplay.classList.remove("hidden");
+	elCoins.innerText = "0";
+
+	// Show username badge during gameplay
+	if (currentUsername) {
+		uiBadge.classList.remove("hidden");
+	}
 
 	// Environment Setup
 	scene.background = new THREE.Color(state.theme.sky);
@@ -381,7 +631,15 @@ function gameOver() {
 	state.isPlaying = false;
 	uiGameOver.classList.remove("hidden");
 	uiScore.classList.add("hidden");
-	elScoreFinal.innerText = Math.floor(state.score);
+	uiCoinDisplay.classList.add("hidden");
+	uiBadge.classList.add("hidden");
+
+	const finalScore = Math.floor(state.score);
+	elScoreFinal.innerText = finalScore;
+	elFinalCoins.innerText = state.coins;
+
+	// Submit score to Supabase and show personal best
+	handleScoreSubmission(finalScore);
 }
 
 function handleInput(e) {
@@ -568,26 +826,45 @@ function animate() {
 		const obj = worldObjects[i];
 		obj.mesh.position.z += state.speed * 2; // Move towards camera
 
-		// Screen shake or effect? nah keep simple
+		// Spin coins
+		if (obj.type === "coin") {
+			obj.mesh.rotation.y += 0.06;
+			// Gentle float bobbing
+			obj.mesh.position.y = 1.0 + Math.sin(Date.now() * 0.005 + obj.mesh.position.x) * 0.15;
+		}
 
 		// Collision Detection
 		if (obj.type === "obstacle") {
-			// Check bounding box overlaps
-			// Player is at Z=0 (approx radius 0.5)
-			// Obstacle is at obj.mesh.position
-
 			// Z Check
 			if (obj.mesh.position.z > -0.8 && obj.mesh.position.z < 0.8) {
-				// X Check
-				// If simple lane check:
-				// if (obj.lane === state.lane) ...
-				// But we are lerping X, so let's do distance check for precision
 				const dx = Math.abs(player.position.x - obj.mesh.position.x);
 				const dy = Math.abs(player.position.y - obj.mesh.position.y);
 
-				// Hitbox size approx 0.8 width
 				if (dx < 0.8 && dy < 0.8) {
 					gameOver();
+				}
+			}
+		}
+
+		// Coin Collection
+		if (obj.type === "coin") {
+			if (obj.mesh.position.z > -1.0 && obj.mesh.position.z < 1.0) {
+				const dx = Math.abs(player.position.x - obj.mesh.position.x);
+				// More forgiving Y hitbox for coins (player can collect while jumping)
+				if (dx < 1.0) {
+					// Collect!
+					state.coins++;
+					state.score += 10; // Bonus score per coin
+					elCoins.innerText = state.coins;
+
+					// Pop animation on coin counter
+					uiCoinDisplay.classList.add("coin-pop");
+					setTimeout(() => uiCoinDisplay.classList.remove("coin-pop"), 150);
+
+					// Remove coin from scene
+					scene.remove(obj.mesh);
+					worldObjects.splice(i, 1);
+					continue;
 				}
 			}
 		}

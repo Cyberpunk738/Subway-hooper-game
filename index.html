@@ -5,17 +5,53 @@
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 	<title>SUBWAY SUPER HOPPER GAME</title>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&amp;display=swap" />
+	<meta name="description" content="Subway Super Hopper — a cute endless runner with global leaderboards. Jump, dodge, and compete for the top score!" />
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap" />
 	<link rel="stylesheet" href="./style.css" />
 </head>
 
 <body>
 	<div id="game-container"></div>
 
+	<!-- Username Modal (shown on first visit) -->
+	<div id="username-modal" class="hidden">
+		<div class="modal-box">
+			<h1 class="modal-title">WHO ARE YOU?</h1>
+			<p class="modal-subtitle">CHOOSE A NAME FOR THE LEADERBOARD</p>
+			<input type="text" id="username-input" placeholder="ENTER NAME..." maxlength="16" autocomplete="off" spellcheck="false" />
+			<p class="modal-error" id="username-error"></p>
+			<div class="modal-buttons">
+				<button id="set-name-btn">SET NAME</button>
+				<button id="play-anon-btn">PLAY ANONYMOUS</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Leaderboard Overlay -->
+	<div id="leaderboard-overlay" class="hidden">
+		<div id="leaderboard-panel">
+			<h2>🏆 TOP SCORES</h2>
+			<ul id="leaderboard-list">
+				<li class="lb-loading">LOADING...</li>
+			</ul>
+			<button id="close-lb-btn">CLOSE</button>
+		</div>
+	</div>
+
 	<div id="ui-layer">
 		<div id="score-display" class="hidden">
 			SCORE: <span id="score">0</span>
 		</div>
+		<div id="coin-display" class="hidden">
+			🪙 <span id="coins">0</span>
+		</div>
+
+		<!-- Username badge (shown during gameplay) -->
+		<div id="username-badge" class="hidden">
+			<span class="badge-icon">👤</span>
+			<span id="badge-name"></span>
+		</div>
+
 		<div id="instructions">
 			STEPS:<br />
 			<span class="key">←</span> <span class="key">→</span> MOVE<br />
@@ -26,13 +62,22 @@
 			<h1 class="title">SUPER HOPPER</h1>
 			<p class="subtitle">MY CUTE ADVENTURE</p>
 			<button id="start-btn">PRESS START</button>
+			<div class="screen-btn-row">
+				<button id="leaderboard-btn">🏆 LEADERBOARD</button>
+			</div>
 		</div>
 
 		<div id="game-over-screen" class="center-screen hidden">
 			<h1 class="title">GAME OVER</h1>
 			<p class="subtitle">SCORE: <span id="final-score">0</span></p>
+			<p id="coins-collected">🪙 <span id="final-coins">0</span> COINS</p>
+			<p id="personal-best" class="hidden">BEST: <span id="best-score">0</span></p>
 			<button id="restart-btn">TRY AGAIN</button>
+			<div class="screen-btn-row">
+				<button id="leaderboard-btn-go">🏆 LEADERBOARD</button>
+			</div>
 		</div>
+
 		<!-- Mobile On-Screen Controls -->
 		<div id="mobile-controls" class="hidden">
 			<button id="mobile-left" class="mobile-btn" aria-label="Move Left">←</button>
@@ -42,6 +87,9 @@
 	</div>
 
 	<!-- Scripts -->
+	<!-- Supabase CDN (lightweight, ~12KB gzipped) -->
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
 	<!-- Using ES Modules for Three.js -->
 	<script type="importmap">
       {
