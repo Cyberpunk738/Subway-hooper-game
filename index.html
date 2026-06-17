@@ -2,10 +2,11 @@
 <html lang="en">
 
 <head>
+	<meta name="ory-verify" content="orynth-6b8a6769ce2e47e586c57d544acca25b" />
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 	<title>SUBWAY SUPER HOPPER GAME</title>
-	<meta name="description" content="Subway Super Hopper — a cute endless runner with global leaderboards. Jump, dodge, and compete for the top score!" />
+	<meta name="description" content="Subway Super Hopper — a cute endless runner with global leaderboards. Hop to the Top! Jump, dodge, collect coins & power-ups, and compete for the #1 score!" />
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap" />
 	<link rel="stylesheet" href="./style.css" />
 </head>
@@ -39,12 +40,18 @@
 	</div>
 
 	<div id="ui-layer">
+		<!-- HUD: Score -->
 		<div id="score-display" class="hidden">
 			SCORE: <span id="score">0</span>
 		</div>
+		<!-- HUD: Coins -->
 		<div id="coin-display" class="hidden">
 			🪙 <span id="coins">0</span>
 		</div>
+		<!-- HUD: Active Power-ups -->
+		<div id="powerup-display" class="hidden"></div>
+		<!-- HUD: Combo Counter -->
+		<div id="combo-display" class="hidden"></div>
 
 		<!-- Username badge (shown during gameplay) -->
 		<div id="username-badge" class="hidden">
@@ -60,7 +67,7 @@
 
 		<div id="start-screen" class="center-screen">
 			<h1 class="title">SUPER HOPPER</h1>
-			<p class="subtitle">MY CUTE ADVENTURE</p>
+			<p class="subtitle">HOP TO THE TOP</p>
 			<button id="start-btn">PRESS START</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn">🏆 LEADERBOARD</button>
@@ -75,6 +82,7 @@
 			<button id="restart-btn">TRY AGAIN</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn-go">🏆 LEADERBOARD</button>
+				<button id="share-btn">📤 SHARE SCORE</button>
 			</div>
 		</div>
 

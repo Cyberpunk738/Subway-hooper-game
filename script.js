@@ -31,6 +31,64 @@ function saveUsername(name) {
 
 let currentUsername = null;
 
+// =============================================
+// SOUND SYSTEM (Web Audio API — No Files Needed)
+// =============================================
+
+let audioCtx = null;
+
+function ensureAudio() {
+	if (!audioCtx) {
+		audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+	}
+	if (audioCtx.state === "suspended") {
+		audioCtx.resume();
+	}
+	return audioCtx;
+}
+
+function playTone(freq, duration, type = "square", volume = 0.15) {
+	try {
+		const ctx = ensureAudio();
+		const osc = ctx.createOscillator();
+		const gain = ctx.createGain();
+		osc.type = type;
+		osc.frequency.setValueAtTime(freq, ctx.currentTime);
+		gain.gain.setValueAtTime(volume, ctx.currentTime);
+		gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+		osc.start(ctx.currentTime);
+		osc.stop(ctx.currentTime + duration);
+	} catch (e) { /* silent fail */ }
+}
+
+function sfxJump() {
+	playTone(400, 0.12, "square", 0.1);
+	setTimeout(() => playTone(600, 0.1, "square", 0.08), 50);
+}
+
+function sfxCoin() {
+	playTone(880, 0.08, "sine", 0.12);
+	setTimeout(() => playTone(1200, 0.12, "sine", 0.1), 60);
+}
+
+function sfxCrash() {
+	playTone(120, 0.3, "sawtooth", 0.2);
+	playTone(80, 0.5, "sawtooth", 0.15);
+}
+
+function sfxPowerup() {
+	playTone(523, 0.1, "sine", 0.12);
+	setTimeout(() => playTone(659, 0.1, "sine", 0.12), 80);
+	setTimeout(() => playTone(784, 0.15, "sine", 0.12), 160);
+}
+
+function sfxShieldBreak() {
+	playTone(300, 0.15, "triangle", 0.15);
+	setTimeout(() => playTone(200, 0.2, "triangle", 0.1), 100);
+}
+
 // --- STATE ---
 let state = {
 	isPlaying: false,
@@ -42,7 +100,17 @@ let state = {
 	isJumping: false,
 	jumpVel: 0,
 	playerY: 0,
-	theme: null
+	theme: null,
+	// Power-up state
+	hasShield: false,
+	hasMagnet: false,
+	has2x: false,
+	shieldTimer: 0,
+	magnetTimer: 0,
+	multiplierTimer: 0,
+	// Combo
+	comboCount: 0,
+	comboTimer: 0
 };
 
 // --- DOM ELEMENTS ---
@@ -79,6 +147,15 @@ const elFinalCoins = document.getElementById("final-coins");
 const uiPersonalBest = document.getElementById("personal-best");
 const elBestScore = document.getElementById("best-score");
 
+// Power-up HUD
+const uiPowerups = document.getElementById("powerup-display");
+
+// Combo Display
+const uiCombo = document.getElementById("combo-display");
+
+// Share Button
+const btnShare = document.getElementById("share-btn");
+
 // --- THREE.JS GLOBALS ---
 let scene,
 	camera,
@@ -86,6 +163,55 @@ let scene,
 	player,
 	floorGroups = [];
 let decorationMeshType, obstacleMeshType;
+let shieldVisual = null; // Shield bubble around player
+
+// --- PARTICLE SYSTEM ---
+let particles = [];
+
+function spawnParticles(position, color, count = 8, spread = 0.5, life = 30) {
+	for (let i = 0; i < count; i++) {
+		const geo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+		const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
+		const mesh = new THREE.Mesh(geo, mat);
+		mesh.position.set(
+			position.x + (Math.random() - 0.5) * spread,
+			position.y + (Math.random() - 0.5) * spread,
+			position.z + (Math.random() - 0.5) * spread
+		);
+		const vel = new THREE.Vector3(
+			(Math.random() - 0.5) * 0.15,
+			Math.random() * 0.12 + 0.05,
+			(Math.random() - 0.5) * 0.1
+		);
+		scene.add(mesh);
+		particles.push({ mesh, vel, life, maxLife: life });
+	}
+}
+
+function updateParticles() {
+	for (let i = particles.length - 1; i >= 0; i--) {
+		const p = particles[i];
+		p.mesh.position.add(p.vel);
+		p.vel.y -= 0.003; // gravity
+		p.life--;
+		p.mesh.material.opacity = p.life / p.maxLife;
+		p.mesh.scale.setScalar(p.life / p.maxLife);
+		if (p.life <= 0) {
+			scene.remove(p.mesh);
+			particles.splice(i, 1);
+		}
+	}
+}
+
+// Running dust trail (spawns periodically)
+let dustTimer = 0;
+function spawnDustTrail() {
+	if (!player) return;
+	const pos = player.position.clone();
+	pos.y = 0.1;
+	pos.z += 0.5;
+	spawnParticles(pos, 0xcccccc, 2, 0.3, 15);
+}
 
 // --- THEMES ---
 const THEMES = [
@@ -125,6 +251,196 @@ const THEMES = [
 		decor: 0x444444
 	}
 ];
+
+// =============================================
+// POWER-UP DEFINITIONS
+// =============================================
+const POWERUP_TYPES = [
+	{ id: "shield", label: "🛡️", color: 0x4fc3f7, duration: 500 },
+	{ id: "magnet", label: "🧲", color: 0xff4081, duration: 400 },
+	{ id: "x2",     label: "×2", color: 0x76ff03, duration: 350 }
+];
+
+function createPowerupMesh(type) {
+	const group = new THREE.Group();
+
+	// Glowing sphere
+	const sphereGeo = new THREE.IcosahedronGeometry(0.4, 1);
+	const sphereMat = new THREE.MeshStandardMaterial({
+		color: type.color,
+		emissive: type.color,
+		emissiveIntensity: 0.6,
+		transparent: true,
+		opacity: 0.85,
+		flatShading: true
+	});
+	const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+	sphere.castShadow = true;
+	group.add(sphere);
+
+	// Outer ring
+	const ringGeo = new THREE.TorusGeometry(0.55, 0.05, 8, 16);
+	const ringMat = new THREE.MeshBasicMaterial({
+		color: type.color,
+		transparent: true,
+		opacity: 0.5
+	});
+	const ring = new THREE.Mesh(ringGeo, ringMat);
+	group.add(ring);
+
+	return group;
+}
+
+function activatePowerup(typeId) {
+	sfxPowerup();
+
+	if (typeId === "shield") {
+		state.hasShield = true;
+		state.shieldTimer = POWERUP_TYPES[0].duration;
+		// Create shield visual
+		if (shieldVisual) scene.remove(shieldVisual);
+		const shieldGeo = new THREE.SphereGeometry(1.0, 12, 8);
+		const shieldMat = new THREE.MeshBasicMaterial({
+			color: 0x4fc3f7,
+			transparent: true,
+			opacity: 0.2,
+			wireframe: true
+		});
+		shieldVisual = new THREE.Mesh(shieldGeo, shieldMat);
+		player.add(shieldVisual);
+		shieldVisual.position.set(0, 0.5, 0);
+	} else if (typeId === "magnet") {
+		state.hasMagnet = true;
+		state.magnetTimer = POWERUP_TYPES[1].duration;
+	} else if (typeId === "x2") {
+		state.has2x = true;
+		state.multiplierTimer = POWERUP_TYPES[2].duration;
+	}
+
+	updatePowerupHUD();
+}
+
+function updatePowerupTimers() {
+	if (state.hasShield) {
+		state.shieldTimer--;
+		if (state.shieldTimer <= 0) {
+			state.hasShield = false;
+			if (shieldVisual) {
+				player.remove(shieldVisual);
+				shieldVisual = null;
+			}
+		}
+	}
+	if (state.hasMagnet) {
+		state.magnetTimer--;
+		if (state.magnetTimer <= 0) state.hasMagnet = false;
+	}
+	if (state.has2x) {
+		state.multiplierTimer--;
+		if (state.multiplierTimer <= 0) state.has2x = false;
+	}
+	updatePowerupHUD();
+}
+
+function updatePowerupHUD() {
+	if (!uiPowerups) return;
+	let html = "";
+	if (state.hasShield) html += `<span class="pu-icon pu-shield">🛡️</span>`;
+	if (state.hasMagnet) html += `<span class="pu-icon pu-magnet">🧲</span>`;
+	if (state.has2x) html += `<span class="pu-icon pu-x2">×2</span>`;
+	uiPowerups.innerHTML = html;
+	if (html) {
+		uiPowerups.classList.remove("hidden");
+	} else {
+		uiPowerups.classList.add("hidden");
+	}
+}
+
+// Magnet: attract nearby coins toward player
+function magnetPull() {
+	if (!state.hasMagnet || !player) return;
+	for (const obj of worldObjects) {
+		if (obj.type !== "coin") continue;
+		const dist = Math.abs(obj.mesh.position.x - player.position.x);
+		const zDist = Math.abs(obj.mesh.position.z - player.position.z);
+		if (dist < 4.0 && zDist < 5.0) {
+			// Pull coin toward player X
+			obj.mesh.position.x += (player.position.x - obj.mesh.position.x) * 0.12;
+		}
+	}
+}
+
+// =============================================
+// COMBO SYSTEM
+// =============================================
+
+function registerCoinCombo() {
+	state.comboCount++;
+	state.comboTimer = 90; // frames (~1.5 sec window)
+	updateComboDisplay();
+}
+
+function updateCombo() {
+	if (state.comboTimer > 0) {
+		state.comboTimer--;
+		if (state.comboTimer <= 0) {
+			state.comboCount = 0;
+			updateComboDisplay();
+		}
+	}
+}
+
+function getComboMultiplier() {
+	if (state.comboCount >= 8) return 4;
+	if (state.comboCount >= 5) return 3;
+	if (state.comboCount >= 3) return 2;
+	return 1;
+}
+
+function updateComboDisplay() {
+	if (!uiCombo) return;
+	const mult = getComboMultiplier();
+	if (mult > 1) {
+		uiCombo.textContent = `COMBO x${mult}`;
+		uiCombo.classList.remove("hidden");
+		uiCombo.classList.add("combo-pop");
+		setTimeout(() => uiCombo.classList.remove("combo-pop"), 200);
+	} else {
+		uiCombo.classList.add("hidden");
+	}
+}
+
+// =============================================
+// SHARE SCORE
+// =============================================
+
+async function shareScore() {
+	const score = elScoreFinal.innerText;
+	const coins = elFinalCoins.innerText;
+	const name = currentUsername || "A player";
+	const text = `🏃 ${name} scored ${score} points and collected ${coins} coins on Super Hopper! 🪙\nCan you beat it? 🔗\nhttps://subway-hooper-game.vercel.app`;
+
+	// Try Web Share API first (mobile)
+	if (navigator.share) {
+		try {
+			await navigator.share({ title: "Super Hopper Score!", text });
+			return;
+		} catch (e) { /* user cancelled or unsupported */ }
+	}
+
+	// Fallback: copy to clipboard
+	try {
+		await navigator.clipboard.writeText(text);
+		if (btnShare) {
+			const orig = btnShare.textContent;
+			btnShare.textContent = "✅ COPIED!";
+			setTimeout(() => { btnShare.textContent = orig; }, 1500);
+		}
+	} catch (e) {
+		// Last resort
+		prompt("Copy your score:", text);
+	}
+}
 
 // =============================================
 // USERNAME MODAL LOGIC
@@ -322,6 +638,18 @@ function init() {
 	initUsernameHandlers();
 	initLeaderboardHandlers();
 
+	// Share button
+	if (btnShare) btnShare.addEventListener("click", shareScore);
+
+	// Unlock audio on first user interaction
+	const unlockAudio = () => {
+		ensureAudio();
+		document.removeEventListener("click", unlockAudio);
+		document.removeEventListener("touchstart", unlockAudio);
+	};
+	document.addEventListener("click", unlockAudio);
+	document.addEventListener("touchstart", unlockAudio);
+
 	// Check if user already has a saved username
 	const saved = getSavedUsername();
 	if (saved) {
@@ -494,20 +822,15 @@ function generateWorldChunk(zPos) {
 let worldObjects = [];
 let spawnTimer = 0;
 let lastObstacleLane = -99;
+let powerupSpawnCounter = 0;
 
 function spawnRow() {
 	// Spawn row at far Z (-60)
 	const zStart = -60;
 
-	// Ground segment (Visual only, to give speed feeling if striped, or just endless plane)
-	// To make it feel fast, we can use a grid helper or moving stripes.
-	// Let's spawn "Décor" on sides always.
-
 	// Left Decor
 	if (Math.random() > 0.3) {
-		const dL = createDecorationMesh(); // Clone?
-		// Optimization: clone geometry
-		// For this simple game, recreating is fine or simple helpers.
+		const dL = createDecorationMesh();
 		dL.position.set(-5 - Math.random() * 5, 0, zStart);
 		scene.add(dL);
 		worldObjects.push({ mesh: dL, type: "decor" });
@@ -522,11 +845,9 @@ function spawnRow() {
 	}
 
 	// Obstacle Logic
-	// Chance to spawn obstacle
 	let obstacleLane = null;
 	if (Math.random() > 0.3) {
-		// 70% chance of obstacle
-		let lane = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
+		let lane = Math.floor(Math.random() * 3) - 1;
 		obstacleLane = lane;
 
 		const obs = createObstacleMesh();
@@ -535,10 +856,9 @@ function spawnRow() {
 		worldObjects.push({ mesh: obs, type: "obstacle", lane: lane, passed: false });
 	}
 
-	// Coin Logic — 40% chance, never on same lane as obstacle in this row
+	// Coin Logic — 40% chance, never on same lane as obstacle
 	if (Math.random() > 0.6) {
 		let coinLane = Math.floor(Math.random() * 3) - 1;
-		// Avoid placing coin on top of obstacle
 		if (coinLane === obstacleLane) {
 			coinLane = coinLane === 1 ? -1 : coinLane + 1;
 		}
@@ -547,10 +867,28 @@ function spawnRow() {
 		scene.add(coinMesh);
 		worldObjects.push({ mesh: coinMesh, type: "coin", lane: coinLane });
 	}
+
+	// Power-up Logic — spawn every ~25 rows, random type
+	powerupSpawnCounter++;
+	if (powerupSpawnCounter >= 25 && Math.random() > 0.5) {
+		powerupSpawnCounter = 0;
+		let puLane = Math.floor(Math.random() * 3) - 1;
+		if (puLane === obstacleLane) {
+			puLane = puLane === 1 ? -1 : puLane + 1;
+		}
+		const puType = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+		const puMesh = createPowerupMesh(puType);
+		puMesh.position.set(puLane * CONFIG.laneWidth, 1.2, zStart);
+		scene.add(puMesh);
+		worldObjects.push({ mesh: puMesh, type: "powerup", powerupType: puType, lane: puLane });
+	}
 }
 
 function startGame() {
 	if (state.isPlaying) return;
+
+	// Unlock audio context on game start
+	ensureAudio();
 
 	// Reset State
 	state = {
@@ -563,8 +901,19 @@ function startGame() {
 		isJumping: false,
 		jumpVel: 0,
 		playerY: 0,
-		theme: randomTheme()
+		theme: randomTheme(),
+		hasShield: false,
+		hasMagnet: false,
+		has2x: false,
+		shieldTimer: 0,
+		magnetTimer: 0,
+		multiplierTimer: 0,
+		comboCount: 0,
+		comboTimer: 0
 	};
+
+	powerupSpawnCounter = 0;
+	shieldVisual = null;
 
 	// UI
 	uiStart.classList.add("hidden");
@@ -577,6 +926,10 @@ function startGame() {
 	uiCoinDisplay.classList.remove("hidden");
 	elCoins.innerText = "0";
 
+	// Power-up HUD
+	if (uiPowerups) { uiPowerups.innerHTML = ""; uiPowerups.classList.add("hidden"); }
+	if (uiCombo) uiCombo.classList.add("hidden");
+
 	// Show username badge during gameplay
 	if (currentUsername) {
 		uiBadge.classList.remove("hidden");
@@ -587,11 +940,9 @@ function startGame() {
 	scene.fog = new THREE.Fog(state.theme.sky, 10, 50);
 
 	// Floor
-	// Remove old floor if any
 	floorGroups.forEach((f) => scene.remove(f));
 	floorGroups = [];
 
-	// Add Infinite Floor Plane
 	const planeGeo = new THREE.PlaneGeometry(100, 200);
 	const planeMat = new THREE.MeshStandardMaterial({
 		color: state.theme.ground,
@@ -605,7 +956,6 @@ function startGame() {
 	scene.add(floor);
 	floorGroups.push(floor);
 
-	// Grid Helper for speed sensation
 	const grid = new THREE.GridHelper(200, 100, 0xffffff, 0xffffff);
 	grid.position.y = 0.01;
 	grid.position.z = -50;
@@ -618,9 +968,11 @@ function startGame() {
 	player = createPlayer();
 	player.position.set(0, 0, 0);
 
-	// Clear Objects
+	// Clear Objects & Particles
 	worldObjects.forEach((obj) => scene.remove(obj.mesh));
 	worldObjects = [];
+	particles.forEach((p) => scene.remove(p.mesh));
+	particles = [];
 
 	// Loop
 	lastTime = Date.now();
@@ -629,22 +981,47 @@ function startGame() {
 
 function gameOver() {
 	state.isPlaying = false;
+
+	sfxCrash();
+
+	// Death explosion particles
+	if (player) {
+		spawnParticles(player.position.clone(), 0xff4444, 20, 1.0, 40);
+		spawnParticles(player.position.clone(), 0xffaa00, 12, 0.8, 35);
+	}
+
 	uiGameOver.classList.remove("hidden");
 	uiScore.classList.add("hidden");
 	uiCoinDisplay.classList.add("hidden");
 	uiBadge.classList.add("hidden");
+	if (uiPowerups) uiPowerups.classList.add("hidden");
+	if (uiCombo) uiCombo.classList.add("hidden");
 
 	const finalScore = Math.floor(state.score);
 	elScoreFinal.innerText = finalScore;
 	elFinalCoins.innerText = state.coins;
 
+	// Show share button
+	if (btnShare) btnShare.classList.remove("hidden");
+
 	// Submit score to Supabase and show personal best
 	handleScoreSubmission(finalScore);
+
+	// Keep rendering briefly for death particles
+	let deathFrames = 0;
+	function deathAnim() {
+		if (deathFrames > 60) return;
+		deathFrames++;
+		updateParticles();
+		renderer.render(scene, camera);
+		requestAnimationFrame(deathAnim);
+	}
+	deathAnim();
 }
 
 function handleInput(e) {
 	if (!state.isPlaying) {
-		if (e.code === "Space" || e.code === "Enter") startGame(); // Optional helper
+		if (e.code === "Space" || e.code === "Enter") startGame();
 		return;
 	}
 
@@ -656,6 +1033,7 @@ function handleInput(e) {
 		if (!state.isJumping) {
 			state.isJumping = true;
 			state.jumpVel = CONFIG.jumpPower;
+			sfxJump();
 		}
 	}
 }
@@ -664,8 +1042,8 @@ function handleInput(e) {
 let touchStartX = 0;
 let touchStartY = 0;
 let touchStartTime = 0;
-const SWIPE_THRESHOLD = 30; // minimum px distance for a swipe
-const SWIPE_TIME_LIMIT = 400; // max ms for a valid swipe
+const SWIPE_THRESHOLD = 30;
+const SWIPE_TIME_LIMIT = 400;
 
 function initTouchControls() {
 	const el = document.getElementById("game-container");
@@ -683,18 +1061,16 @@ function initTouchControls() {
 		const dy = touch.clientY - touchStartY;
 		const dt = Date.now() - touchStartTime;
 
-		// Only register swipes within time limit
 		if (dt > SWIPE_TIME_LIMIT) return;
 
 		const absDx = Math.abs(dx);
 		const absDy = Math.abs(dy);
 
-		// Must exceed threshold
 		if (absDx < SWIPE_THRESHOLD && absDy < SWIPE_THRESHOLD) {
-			// Tap — treat as jump
 			if (state.isPlaying && !state.isJumping) {
 				state.isJumping = true;
 				state.jumpVel = CONFIG.jumpPower;
+				sfxJump();
 			}
 			return;
 		}
@@ -702,23 +1078,20 @@ function initTouchControls() {
 		if (!state.isPlaying) return;
 
 		if (absDx > absDy) {
-			// Horizontal swipe
 			if (dx < 0 && state.lane > -1) {
 				state.lane--;
 			} else if (dx > 0 && state.lane < 1) {
 				state.lane++;
 			}
 		} else {
-			// Vertical swipe
 			if (dy < 0 && !state.isJumping) {
-				// Swipe up = jump
 				state.isJumping = true;
 				state.jumpVel = CONFIG.jumpPower;
+				sfxJump();
 			}
 		}
 	}, { passive: true });
 
-	// Prevent scrolling / pull-to-refresh while playing
 	document.addEventListener("touchmove", (e) => {
 		if (state.isPlaying) {
 			e.preventDefault();
@@ -740,7 +1113,6 @@ function initMobileButtons() {
 			e.stopPropagation();
 			action();
 		}, { passive: false });
-		// Also support click for desktop testing
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			action();
@@ -759,10 +1131,10 @@ function initMobileButtons() {
 		if (state.isPlaying && !state.isJumping) {
 			state.isJumping = true;
 			state.jumpVel = CONFIG.jumpPower;
+			sfxJump();
 		}
 	});
 
-	// Show mobile controls on touch devices
 	const mobileControls = document.getElementById("mobile-controls");
 	if (mobileControls && isTouchDevice()) {
 		mobileControls.classList.remove("hidden");
@@ -780,19 +1152,15 @@ function animate() {
 
 	requestAnimationFrame(animate);
 
-	// Delta Time? simplified fixed step kinda
-	// const now = Date.now();
-	// const dt = (now - lastTime) / 1000;
-	// lastTime = now;
-
 	// Update Score and Speed
-	state.score += state.speed;
+	const scoreAdd = state.has2x ? state.speed * 2 : state.speed;
+	state.score += scoreAdd;
 	state.speed += CONFIG.speedInc;
 	elScore.innerText = Math.floor(state.score);
 
 	// Player Movement (Lane Lerp)
 	const targetX = state.lane * CONFIG.laneWidth;
-	state.currentLaneX += (targetX - state.currentLaneX) * 0.15; // Smooth slide
+	state.currentLaneX += (targetX - state.currentLaneX) * 0.15;
 	player.position.x = state.currentLaneX;
 
 	// Player Jump Physics
@@ -804,19 +1172,33 @@ function animate() {
 			state.isJumping = false;
 		}
 	} else {
-		// Run Bounce
 		state.playerY = Math.abs(Math.sin(Date.now() * 0.015)) * 0.1;
 	}
-	player.position.y = state.playerY + 0.5; // +0.5 is visual center offset
+	player.position.y = state.playerY + 0.5;
 
-	// Player Rotation (Tilt into turn)
+	// Player Rotation
 	player.rotation.z = (state.currentLaneX - player.position.x) * -0.1;
-	player.rotation.x = state.isJumping ? -0.2 : 0; // Lean forward jump
+	player.rotation.x = state.isJumping ? -0.2 : 0;
+
+	// Update power-up timers
+	updatePowerupTimers();
+
+	// Magnet effect
+	magnetPull();
+
+	// Combo timer
+	updateCombo();
+
+	// Running dust trail
+	dustTimer++;
+	if (dustTimer > 4 && !state.isJumping) {
+		spawnDustTrail();
+		dustTimer = 0;
+	}
 
 	// Spawn World
 	spawnTimer += state.speed;
 	if (spawnTimer > 3) {
-		// Distance between rows
 		spawnRow();
 		spawnTimer = 0;
 	}
@@ -824,24 +1206,43 @@ function animate() {
 	// Move World Objects
 	for (let i = worldObjects.length - 1; i >= 0; i--) {
 		const obj = worldObjects[i];
-		obj.mesh.position.z += state.speed * 2; // Move towards camera
+		obj.mesh.position.z += state.speed * 2;
 
-		// Spin coins
+		// Spin coins & powerups
 		if (obj.type === "coin") {
 			obj.mesh.rotation.y += 0.06;
-			// Gentle float bobbing
 			obj.mesh.position.y = 1.0 + Math.sin(Date.now() * 0.005 + obj.mesh.position.x) * 0.15;
 		}
+		if (obj.type === "powerup") {
+			obj.mesh.rotation.y += 0.04;
+			obj.mesh.position.y = 1.2 + Math.sin(Date.now() * 0.004 + obj.mesh.position.x * 2) * 0.2;
+		}
 
-		// Collision Detection
+		// Collision Detection — Obstacles
 		if (obj.type === "obstacle") {
-			// Z Check
 			if (obj.mesh.position.z > -0.8 && obj.mesh.position.z < 0.8) {
 				const dx = Math.abs(player.position.x - obj.mesh.position.x);
 				const dy = Math.abs(player.position.y - obj.mesh.position.y);
 
 				if (dx < 0.8 && dy < 0.8) {
-					gameOver();
+					if (state.hasShield) {
+						// Shield absorbs the hit
+						state.hasShield = false;
+						state.shieldTimer = 0;
+						if (shieldVisual) {
+							player.remove(shieldVisual);
+							shieldVisual = null;
+						}
+						sfxShieldBreak();
+						spawnParticles(obj.mesh.position.clone(), 0x4fc3f7, 10, 0.8, 25);
+						// Remove obstacle
+						scene.remove(obj.mesh);
+						worldObjects.splice(i, 1);
+						updatePowerupHUD();
+						continue;
+					} else {
+						gameOver();
+					}
 				}
 			}
 		}
@@ -850,18 +1251,38 @@ function animate() {
 		if (obj.type === "coin") {
 			if (obj.mesh.position.z > -1.0 && obj.mesh.position.z < 1.0) {
 				const dx = Math.abs(player.position.x - obj.mesh.position.x);
-				// More forgiving Y hitbox for coins (player can collect while jumping)
 				if (dx < 1.0) {
 					// Collect!
+					const comboMult = getComboMultiplier();
+					const coinValue = 10 * comboMult * (state.has2x ? 2 : 1);
 					state.coins++;
-					state.score += 10; // Bonus score per coin
+					state.score += coinValue;
 					elCoins.innerText = state.coins;
+
+					sfxCoin();
+					registerCoinCombo();
+
+					// Sparkle particles
+					spawnParticles(obj.mesh.position.clone(), 0xffd700, 6, 0.4, 20);
 
 					// Pop animation on coin counter
 					uiCoinDisplay.classList.add("coin-pop");
 					setTimeout(() => uiCoinDisplay.classList.remove("coin-pop"), 150);
 
-					// Remove coin from scene
+					scene.remove(obj.mesh);
+					worldObjects.splice(i, 1);
+					continue;
+				}
+			}
+		}
+
+		// Power-up Collection
+		if (obj.type === "powerup") {
+			if (obj.mesh.position.z > -1.0 && obj.mesh.position.z < 1.0) {
+				const dx = Math.abs(player.position.x - obj.mesh.position.x);
+				if (dx < 1.0) {
+					activatePowerup(obj.powerupType.id);
+					spawnParticles(obj.mesh.position.clone(), obj.powerupType.color, 10, 0.6, 25);
 					scene.remove(obj.mesh);
 					worldObjects.splice(i, 1);
 					continue;
@@ -875,6 +1296,9 @@ function animate() {
 			worldObjects.splice(i, 1);
 		}
 	}
+
+	// Update particles
+	updateParticles();
 
 	renderer.render(scene, camera);
 }
