@@ -95,7 +95,7 @@ button:hover {
 
 #instructions {
 	position: absolute;
-	top: 20px;
+	top: 60px;
 	right: 20px;
 	background: linear-gradient(135deg,
 			rgba(255, 255, 255, 0.2),
