@@ -565,6 +565,18 @@ button:hover {
 	margin-top: 0.8rem;
 }
 
+.orynth-badge {
+	display: inline-block;
+	margin-top: 1rem;
+	pointer-events: auto;
+	transition: opacity 0.2s, transform 0.2s;
+}
+
+.orynth-badge:hover {
+	opacity: 0.85;
+	transform: scale(1.03);
+}
+
 #leaderboard-btn,
 #leaderboard-btn-go {
 	background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 170, 0, 0.1));

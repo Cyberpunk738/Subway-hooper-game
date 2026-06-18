@@ -32,8 +32,7 @@ export async function submitScore(username, score) {
 	if (!supabase) return false;
 	try {
 		const { error } = await supabase
-			.from("leaderboard")
-			.insert([{ username, score }]);
+			.rpc("submit_best_score", { p_username: username, p_score: score });
 		if (error) {
 			console.warn("Score submit error:", error.message);
 			return false;
