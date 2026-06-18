@@ -3,7 +3,8 @@ import {
 	initSupabase,
 	submitScore,
 	getTopScores,
-	getPlayerBest
+	getPlayerBest,
+	getWeeklyScores
 } from "./supabase.js";
 
 // --- CONFIG ---
@@ -17,6 +18,41 @@ const CONFIG = {
 	floorLength: 400,
 	fogDensity: 0.02
 };
+
+// --- MILESTONES ---
+const MILESTONES = [
+	{ score: 100, label: "100m!" },
+	{ score: 250, label: "250m!" },
+	{ score: 500, label: "500m!" },
+	{ score: 1000, label: "1KM!" },
+	{ score: 2500, label: "2.5KM!" },
+	{ score: 5000, label: "5KM!" },
+	{ score: 10000, label: "10KM!" }
+];
+
+// --- UNLOCKABLE SKINS ---
+const SKINS = [
+	{ id: "default", name: "CLASSIC", color: 0xaaaaaa, cost: 0, unlockScore: 0 },
+	{ id: "blue", name: "OCEAN", color: 0x4fc3f7, cost: 50, unlockScore: 100 },
+	{ id: "gold", name: "GOLD", color: 0xffd700, cost: 100, unlockScore: 500 },
+	{ id: "neon", name: "NEON", color: 0x76ff03, cost: 200, unlockScore: 1000 },
+	{ id: "ruby", name: "RUBY", color: 0xff1744, cost: 300, unlockScore: 2500 },
+	{ id: "cosmic", name: "COSMIC", color: 0xea80fc, cost: 500, unlockScore: 5000 }
+];
+
+// --- ACHIEVEMENTS ---
+const ACHIEVEMENTS = [
+	{ id: 0, name: "FIRST STEPS", desc: "Play your first game", icon: "🎮" },
+	{ id: 1, name: "CENTURY", desc: "Score 100 points", icon: "💯" },
+	{ id: 2, name: "GRAND", desc: "Score 1000 points", icon: "🌟" },
+	{ id: 3, name: "COIN COLLECTOR", desc: "Collect 10 coins in one run", icon: "🪙" },
+	{ id: 4, name: "COIN HOARDER", desc: "Collect 50 coins in one run", icon: "💰" },
+	{ id: 5, name: "COMBO MASTER", desc: "Reach 3x combo", icon: "🔥" },
+	{ id: 6, name: "DAREDEVIL", desc: "Get 5 near misses in one run", icon: "💀" },
+	{ id: 7, name: "SURVIVOR", desc: "Survive a Speed Zone", icon: "⚡" },
+	{ id: 8, name: "DEDICATED", desc: "7-day streak", icon: "📅" },
+	{ id: 9, name: "FASHIONISTA", desc: "Buy a skin", icon: "👗" }
+];
 
 // --- PERFORMANCE: Geometry Cache & Helpers ---
 let _cachedGeos = null;
@@ -54,6 +90,12 @@ function disposeMeshMaterials(obj) {
 
 // --- PLAYER IDENTITY ---
 const STORAGE_KEY = "subway_hopper_username";
+const STREAK_KEY = "subway_hopper_streak";
+const COINS_BANK_KEY = "subway_hopper_bank";
+const SKINS_UNLOCKED_KEY = "subway_hopper_skins";
+const SELECTED_SKIN_KEY = "subway_hopper_skin_sel";
+const ACHIEVEMENTS_KEY = "subway_hopper_achv";
+const MUTE_KEY = "subway_hopper_mute";
 
 function getSavedUsername() {
 	return localStorage.getItem(STORAGE_KEY);
@@ -61,6 +103,32 @@ function getSavedUsername() {
 
 function saveUsername(name) {
 	localStorage.setItem(STORAGE_KEY, name);
+}
+
+// --- PERSISTENCE HELPERS ---
+function getStreakData() {
+	try { return JSON.parse(localStorage.getItem(STREAK_KEY)) || { lastDate: null, count: 0 }; }
+	catch(e) { return { lastDate: null, count: 0 }; }
+}
+function saveStreakData(d) { localStorage.setItem(STREAK_KEY, JSON.stringify(d)); }
+function getCoinBank() { return parseInt(localStorage.getItem(COINS_BANK_KEY)) || 0; }
+function saveCoinBank(n) { localStorage.setItem(COINS_BANK_KEY, String(n)); }
+function getUnlockedSkins() {
+	try { return JSON.parse(localStorage.getItem(SKINS_UNLOCKED_KEY)) || ["default"]; }
+	catch(e) { return ["default"]; }
+}
+function saveUnlockedSkins(s) { localStorage.setItem(SKINS_UNLOCKED_KEY, JSON.stringify(s)); }
+function getSelectedSkin() { return localStorage.getItem(SELECTED_SKIN_KEY) || "default"; }
+function saveSelectedSkin(id) { localStorage.setItem(SELECTED_SKIN_KEY, id); }
+function getAchievementBits() { return parseInt(localStorage.getItem(ACHIEVEMENTS_KEY)) || 0; }
+function saveAchievementBits(b) { localStorage.setItem(ACHIEVEMENTS_KEY, String(b)); }
+function hasAchievement(bf, id) { return (bf & (1 << id)) !== 0; }
+function grantAchievement(id) {
+	let bf = getAchievementBits();
+	if (hasAchievement(bf, id)) return false;
+	bf |= (1 << id);
+	saveAchievementBits(bf);
+	return true;
 }
 
 let currentUsername = null;
@@ -144,7 +212,13 @@ let state = {
 	multiplierTimer: 0,
 	// Combo
 	comboCount: 0,
-	comboTimer: 0
+	comboTimer: 0,
+	// New features
+	nearMissCount: 0,
+	nextMilestoneIdx: 0,
+	lastThemeScore: 0,
+	themeTransition: null,
+	maxCombo: 0
 };
 
 // --- DOM ELEMENTS ---
@@ -413,6 +487,7 @@ function magnetPull() {
 
 function registerCoinCombo() {
 	state.comboCount++;
+	if (state.comboCount > state.maxCombo) state.maxCombo = state.comboCount;
 	state.comboTimer = 90; // frames (~1.5 sec window)
 	updateComboDisplay();
 }
@@ -446,6 +521,302 @@ function updateComboDisplay() {
 		uiCombo.classList.add("hidden");
 	}
 }
+
+// =============================================
+// NEAR MISS SYSTEM
+// =============================================
+
+function showNearMiss() {
+	const el = document.getElementById("near-miss-flash");
+	if (!el) return;
+	el.classList.remove("hidden");
+	el.style.animation = "none";
+	el.offsetHeight;
+	el.style.animation = "";
+	setTimeout(() => el.classList.add("hidden"), 800);
+}
+
+// =============================================
+// MILESTONE SYSTEM
+// =============================================
+
+function checkMilestones() {
+	if (state.nextMilestoneIdx >= MILESTONES.length) return;
+	const m = MILESTONES[state.nextMilestoneIdx];
+	if (Math.floor(state.score) >= m.score) {
+		state.nextMilestoneIdx++;
+		showMilestone(m.label);
+		if (player) spawnParticles(player.position.clone(), 0xffd700, 15, 1.5, 40);
+		playTone(660, 0.15, "sine", 0.12);
+		setTimeout(() => playTone(880, 0.15, "sine", 0.1), 100);
+	}
+}
+
+function showMilestone(text) {
+	const el = document.getElementById("milestone-banner");
+	if (!el) return;
+	el.textContent = text;
+	el.classList.remove("hidden");
+	el.style.animation = "none";
+	el.offsetHeight;
+	el.style.animation = "";
+	setTimeout(() => el.classList.add("hidden"), 2000);
+}
+
+// =============================================
+// THEME TRANSITION SYSTEM
+// =============================================
+
+function checkThemeTransition() {
+	const interval = 500;
+	const currentInterval = Math.floor(state.score / interval);
+	const lastInterval = Math.floor(state.lastThemeScore / interval);
+
+	if (currentInterval > lastInterval && !state.themeTransition) {
+		state.lastThemeScore = state.score;
+		const newTheme = THEMES[Math.floor(Math.random() * THEMES.length)];
+		if (newTheme.name !== state.theme.name) {
+			state.themeTransition = {
+				fromSky: scene.background.clone(),
+				toSky: new THREE.Color(newTheme.sky),
+				fromFog: scene.fog.color.clone(),
+				toFog: new THREE.Color(newTheme.sky),
+				progress: 0,
+				newTheme: newTheme
+			};
+		}
+	}
+
+	if (state.themeTransition) {
+		state.themeTransition.progress += 0.008;
+		const t = state.themeTransition.progress;
+		scene.background.copy(state.themeTransition.fromSky).lerp(state.themeTransition.toSky, t);
+		scene.fog.color.copy(state.themeTransition.fromFog).lerp(state.themeTransition.toFog, t);
+		if (t >= 1) {
+			state.theme = state.themeTransition.newTheme;
+			state.themeTransition = null;
+		}
+	}
+}
+
+// =============================================
+// BACKGROUND MUSIC SYSTEM
+// =============================================
+
+let musicInterval = null;
+let isMuted = false;
+let musicBeat = 0;
+
+const BASS_NOTES = [130.81, 130.81, 164.81, 146.83];
+const ARP_NOTES = [523.25, 659.25, 783.99, 659.25, 523.25, 392.00, 523.25, 659.25];
+
+function startMusic() {
+	if (isMuted || musicInterval) return;
+	musicBeat = 0;
+	const beatMs = Math.floor(60000 / 140 / 2);
+	musicInterval = setInterval(() => {
+		if (!state.isPlaying || isMuted) { stopMusic(); return; }
+		try {
+			if (musicBeat % 4 === 0) {
+				playTone(BASS_NOTES[(musicBeat / 4) % BASS_NOTES.length], 0.15, "triangle", 0.05);
+			}
+			playTone(ARP_NOTES[musicBeat % ARP_NOTES.length], 0.08, "square", 0.025);
+			musicBeat++;
+		} catch (e) { /* silent */ }
+	}, beatMs);
+}
+
+function stopMusic() {
+	if (musicInterval) { clearInterval(musicInterval); musicInterval = null; }
+}
+
+function toggleMute() {
+	isMuted = !isMuted;
+	localStorage.setItem(MUTE_KEY, isMuted ? "1" : "0");
+	const btn = document.getElementById("mute-btn");
+	if (btn) btn.textContent = isMuted ? "🔇" : "🔊";
+	if (isMuted) stopMusic();
+	else if (state.isPlaying) startMusic();
+}
+
+// =============================================
+// DAILY STREAK SYSTEM
+// =============================================
+
+function checkDailyStreak() {
+	const data = getStreakData();
+	const today = new Date().toDateString();
+	if (data.lastDate === today) return data.count;
+	const yesterday = new Date(Date.now() - 86400000).toDateString();
+	if (data.lastDate === yesterday) {
+		data.count++;
+	} else {
+		data.count = 1;
+	}
+	data.lastDate = today;
+	saveStreakData(data);
+	const bonus = data.count * 5;
+	saveCoinBank(getCoinBank() + bonus);
+	return data.count;
+}
+
+function updateStreakDisplay() {
+	const el = document.getElementById("streak-display");
+	if (!el) return;
+	const data = getStreakData();
+	if (data.count > 1) {
+		el.textContent = "🔥 " + data.count + "-DAY STREAK!";
+		el.classList.remove("hidden");
+	} else {
+		el.classList.add("hidden");
+	}
+}
+
+function updateBankDisplay() {
+	const el = document.getElementById("bank-coins");
+	if (el) el.textContent = getCoinBank();
+}
+
+// =============================================
+// SKIN UNLOCK SYSTEM
+// =============================================
+
+function checkSkinUnlocks(score) {
+	const unlocked = getUnlockedSkins();
+	let changed = false;
+	for (const skin of SKINS) {
+		if (!unlocked.includes(skin.id) && score >= skin.unlockScore) {
+			unlocked.push(skin.id);
+			changed = true;
+		}
+	}
+	if (changed) saveUnlockedSkins(unlocked);
+}
+
+// =============================================
+// COIN SHOP
+// =============================================
+
+function openShop() {
+	document.getElementById("shop-overlay").classList.remove("hidden");
+	renderShop();
+}
+
+function closeShop() {
+	document.getElementById("shop-overlay").classList.add("hidden");
+}
+
+function renderShop() {
+	const grid = document.getElementById("skin-grid");
+	const coinEl = document.getElementById("shop-coin-count");
+	const bank = getCoinBank();
+	if (coinEl) coinEl.textContent = bank;
+	const unlocked = getUnlockedSkins();
+	const selected = getSelectedSkin();
+	grid.innerHTML = SKINS.map(function(skin) {
+		const isUnlocked = unlocked.includes(skin.id);
+		const isSelected = selected === skin.id;
+		const canAfford = bank >= skin.cost;
+		let label, cls;
+		if (isSelected) { label = "✓ EQUIPPED"; cls = "skin-equipped"; }
+		else if (isUnlocked) { label = "SELECT"; cls = "skin-unlocked"; }
+		else if (canAfford) { label = "🪙 " + skin.cost; cls = "skin-buyable"; }
+		else { label = "🔒 " + skin.cost; cls = "skin-locked"; }
+		const hex = "#" + skin.color.toString(16).padStart(6, "0");
+		return '<div class="skin-item ' + cls + '" data-skin="' + skin.id + '">' +
+			'<div class="skin-color" style="background:' + hex + '"></div>' +
+			'<div class="skin-name">' + skin.name + '</div>' +
+			'<div class="skin-action">' + label + '</div></div>';
+	}).join("");
+	grid.querySelectorAll(".skin-item").forEach(function(el) {
+		el.style.pointerEvents = "auto";
+		el.addEventListener("click", function() {
+			const skinId = el.dataset.skin;
+			const skin = SKINS.find(function(s) { return s.id === skinId; });
+			const ul = getUnlockedSkins();
+			if (ul.includes(skinId)) {
+				saveSelectedSkin(skinId);
+			} else if (getCoinBank() >= skin.cost) {
+				saveCoinBank(getCoinBank() - skin.cost);
+				ul.push(skinId);
+				saveUnlockedSkins(ul);
+				saveSelectedSkin(skinId);
+				grantAchievement(9);
+			}
+			renderShop();
+			updateBankDisplay();
+		});
+	});
+}
+
+// =============================================
+// ACHIEVEMENT SYSTEM
+// =============================================
+
+let achievementQueue = [];
+let achievementShowing = false;
+
+function checkAchievements() {
+	const finalScore = Math.floor(state.score);
+	if (grantAchievement(0)) showAchievementToast(ACHIEVEMENTS[0]);
+	if (finalScore >= 100 && grantAchievement(1)) showAchievementToast(ACHIEVEMENTS[1]);
+	if (finalScore >= 1000 && grantAchievement(2)) showAchievementToast(ACHIEVEMENTS[2]);
+	if (state.coins >= 10 && grantAchievement(3)) showAchievementToast(ACHIEVEMENTS[3]);
+	if (state.coins >= 50 && grantAchievement(4)) showAchievementToast(ACHIEVEMENTS[4]);
+	if (state.maxCombo >= 3 && grantAchievement(5)) showAchievementToast(ACHIEVEMENTS[5]);
+	if (state.nearMissCount >= 5 && grantAchievement(6)) showAchievementToast(ACHIEVEMENTS[6]);
+	const streakData = getStreakData();
+	if (streakData.count >= 7 && grantAchievement(8)) showAchievementToast(ACHIEVEMENTS[8]);
+}
+
+function showAchievementToast(achievement) {
+	achievementQueue.push(achievement);
+	if (!achievementShowing) processAchievementQueue();
+}
+
+function processAchievementQueue() {
+	if (achievementQueue.length === 0) { achievementShowing = false; return; }
+	achievementShowing = true;
+	const a = achievementQueue.shift();
+	const el = document.getElementById("achievement-toast");
+	if (!el) return;
+	el.innerHTML = a.icon + " <strong>" + a.name + "</strong><br><small>" + a.desc + "</small>";
+	el.classList.remove("hidden");
+	el.style.animation = "none";
+	el.offsetHeight;
+	el.style.animation = "";
+	setTimeout(() => {
+		el.classList.add("hidden");
+		setTimeout(() => processAchievementQueue(), 300);
+	}, 2500);
+}
+
+function openBadges() {
+	document.getElementById("badges-overlay").classList.remove("hidden");
+	renderBadges();
+}
+
+function closeBadges() {
+	document.getElementById("badges-overlay").classList.add("hidden");
+}
+
+function renderBadges() {
+	const grid = document.getElementById("badges-grid");
+	const bf = getAchievementBits();
+	grid.innerHTML = ACHIEVEMENTS.map(function(a) {
+		const unlocked = hasAchievement(bf, a.id);
+		return '<div class="badge-item ' + (unlocked ? "badge-unlocked" : "badge-locked") + '">' +
+			'<div class="badge-icon-lg">' + (unlocked ? a.icon : "🔒") + '</div>' +
+			'<div class="badge-name">' + a.name + '</div>' +
+			'<div class="badge-desc">' + a.desc + '</div></div>';
+	}).join("");
+}
+
+// =============================================
+// WEEKLY LEADERBOARD
+// =============================================
+
+let currentLBTab = "all";
 
 // =============================================
 // SHARE SCORE
@@ -547,14 +918,22 @@ function initUsernameHandlers() {
 // LEADERBOARD LOGIC
 // =============================================
 
-async function openLeaderboard() {
+async function openLeaderboard(tab) {
+	if (typeof tab !== "string") tab = currentLBTab;
+	currentLBTab = tab;
 	uiLeaderboardOverlay.classList.remove("hidden");
+
+	const tabAll = document.getElementById("lb-tab-all");
+	const tabWeek = document.getElementById("lb-tab-week");
+	if (tabAll) { tabAll.classList.toggle("lb-tab-active", tab === "all"); }
+	if (tabWeek) { tabWeek.classList.toggle("lb-tab-active", tab === "week"); }
+
 	elLeaderboardList.innerHTML = '<li class="lb-loading">LOADING...</li>';
 
-	const scores = await getTopScores(10);
+	const scores = tab === "week" ? await getWeeklyScores(10) : await getTopScores(10);
 
 	if (scores.length === 0) {
-		elLeaderboardList.innerHTML = '<li class="lb-empty">NO SCORES YET — BE THE FIRST!</li>';
+		elLeaderboardList.innerHTML = '<li class="lb-empty">' + (tab === "week" ? "NO SCORES THIS WEEK" : "NO SCORES YET — BE THE FIRST!") + '</li>';
 		return;
 	}
 
@@ -583,8 +962,13 @@ function escapeHTML(str) {
 
 function initLeaderboardHandlers() {
 	btnCloseLB.addEventListener("click", closeLeaderboard);
-	btnLeaderboard.addEventListener("click", openLeaderboard);
-	btnLeaderboardGO.addEventListener("click", openLeaderboard);
+	btnLeaderboard.addEventListener("click", () => openLeaderboard("all"));
+	btnLeaderboardGO.addEventListener("click", () => openLeaderboard("all"));
+
+	const tabAll = document.getElementById("lb-tab-all");
+	const tabWeek = document.getElementById("lb-tab-week");
+	if (tabAll) tabAll.addEventListener("click", () => openLeaderboard("all"));
+	if (tabWeek) tabWeek.addEventListener("click", () => openLeaderboard("week"));
 
 	// Close on overlay background click
 	uiLeaderboardOverlay.addEventListener("click", (e) => {
@@ -671,6 +1055,7 @@ function init() {
 	// UI Handlers
 	document.getElementById("start-btn").addEventListener("click", startGame);
 	document.getElementById("restart-btn").addEventListener("click", startGame);
+	document.getElementById("home-btn").addEventListener("click", goHome);
 
 	// Username & Leaderboard Handlers
 	initUsernameHandlers();
@@ -678,6 +1063,37 @@ function init() {
 
 	// Share button
 	if (btnShare) btnShare.addEventListener("click", shareScore);
+
+	// Mute button
+	const muteBtnInit = document.getElementById("mute-btn");
+	if (muteBtnInit) {
+		muteBtnInit.addEventListener("click", toggleMute);
+		isMuted = localStorage.getItem(MUTE_KEY) === "1";
+		muteBtnInit.textContent = isMuted ? "🔇" : "🔊";
+	}
+
+	// Shop & Badges buttons
+	const shopBtnInit = document.getElementById("shop-btn");
+	if (shopBtnInit) shopBtnInit.addEventListener("click", openShop);
+	const closeShopInit = document.getElementById("close-shop-btn");
+	if (closeShopInit) closeShopInit.addEventListener("click", closeShop);
+	const shopOvl = document.getElementById("shop-overlay");
+	if (shopOvl) shopOvl.addEventListener("click", (e) => {
+		if (e.target === shopOvl) closeShop();
+	});
+	const badgesBtnInit = document.getElementById("badges-btn");
+	if (badgesBtnInit) badgesBtnInit.addEventListener("click", openBadges);
+	const closeBadgesInit = document.getElementById("close-badges-btn");
+	if (closeBadgesInit) closeBadgesInit.addEventListener("click", closeBadges);
+	const badgesOvl = document.getElementById("badges-overlay");
+	if (badgesOvl) badgesOvl.addEventListener("click", (e) => {
+		if (e.target === badgesOvl) closeBadges();
+	});
+
+	// Daily streak & displays
+	checkDailyStreak();
+	updateStreakDisplay();
+	updateBankDisplay();
 
 	// Unlock audio on first user interaction
 	const unlockAudio = () => {
@@ -717,9 +1133,10 @@ function createPlayer() {
 
 	const group = new THREE.Group();
 
-	// Random Animal Features
-	const animalColors = [0xffffff, 0xaaaaaa, 0xffcc99, 0x333333];
-	const color = animalColors[Math.floor(Math.random() * animalColors.length)];
+	// Use selected skin color
+	const skinId = getSelectedSkin();
+	const skinDef = SKINS.find(s => s.id === skinId) || SKINS[0];
+	const color = skinDef.color;
 
 	// Material
 	const mat = new THREE.MeshStandardMaterial({
@@ -941,7 +1358,12 @@ function startGame() {
 		magnetTimer: 0,
 		multiplierTimer: 0,
 		comboCount: 0,
-		comboTimer: 0
+		comboTimer: 0,
+		nearMissCount: 0,
+		nextMilestoneIdx: 0,
+		lastThemeScore: 0,
+		themeTransition: null,
+		maxCombo: 0
 	};
 
 	powerupSpawnCounter = 0;
@@ -961,6 +1383,15 @@ function startGame() {
 	// Power-up HUD
 	if (uiPowerups) { uiPowerups.innerHTML = ""; uiPowerups.classList.add("hidden"); }
 	if (uiCombo) uiCombo.classList.add("hidden");
+
+	// Hide new feature elements
+	const nmEl = document.getElementById("near-miss-flash");
+	const msEl = document.getElementById("milestone-banner");
+	if (nmEl) nmEl.classList.add("hidden");
+	if (msEl) msEl.classList.add("hidden");
+
+	// Start background music
+	startMusic();
 
 	// Show username badge during gameplay
 	if (currentUsername) {
@@ -1011,6 +1442,13 @@ function startGame() {
 	animate();
 }
 
+function goHome() {
+	uiGameOver.classList.add("hidden");
+	uiStart.classList.remove("hidden");
+	updateBankDisplay();
+	updateStreakDisplay();
+}
+
 function gameOver() {
 	state.isPlaying = false;
 
@@ -1038,6 +1476,19 @@ function gameOver() {
 
 	// Submit score to Supabase and show personal best
 	handleScoreSubmission(finalScore);
+
+	// Stop music
+	stopMusic();
+
+	// Save coins to bank and update display
+	saveCoinBank(getCoinBank() + state.coins);
+	updateBankDisplay();
+
+	// Check for new skin unlocks
+	checkSkinUnlocks(finalScore);
+
+	// Check achievements
+	checkAchievements();
 
 	// Keep rendering briefly for death particles
 	let deathFrames = 0;
@@ -1223,6 +1674,12 @@ function animate() {
 	// Combo timer
 	updateCombo();
 
+	// Milestones
+	checkMilestones();
+
+	// Theme transitions
+	checkThemeTransition();
+
 	// Running dust trail
 	dustTimer++;
 	if (dustTimer > 6 && !state.isJumping) {
@@ -1279,6 +1736,17 @@ function animate() {
 						gameOver();
 					}
 				}
+			}
+		}
+
+		// Near miss detection
+		if (obj.type === "obstacle" && !obj.nearMissChecked && obj.mesh.position.z > 1.0) {
+			obj.nearMissChecked = true;
+			const nmDx = Math.abs(player.position.x - obj.mesh.position.x);
+			if (nmDx < 1.5 && nmDx >= 0.8) {
+				state.nearMissCount++;
+				state.score += 25;
+				showNearMiss();
 			}
 		}
 

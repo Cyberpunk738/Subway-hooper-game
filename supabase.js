@@ -89,3 +89,29 @@ export async function getPlayerBest(username) {
 		return null;
 	}
 }
+
+/**
+ * Fetch the top N scores from the past 7 days.
+ * @param {number} limit — default 10
+ * @returns {Promise<Array>} sorted array of { username, score, created_at }
+ */
+export async function getWeeklyScores(limit = 10) {
+	if (!supabase) return [];
+	try {
+		const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+		const { data, error } = await supabase
+			.from("leaderboard")
+			.select("username, score, created_at")
+			.gte("created_at", weekAgo)
+			.order("score", { ascending: false })
+			.limit(limit);
+		if (error) {
+			console.warn("Weekly scores fetch error:", error.message);
+			return [];
+		}
+		return data || [];
+	} catch (err) {
+		console.warn("Weekly scores fetch failed:", err);
+		return [];
+	}
+}

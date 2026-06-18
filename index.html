@@ -32,10 +32,33 @@
 	<div id="leaderboard-overlay" class="hidden">
 		<div id="leaderboard-panel">
 			<h2>🏆 TOP SCORES</h2>
+			<div id="lb-tabs">
+				<button class="lb-tab lb-tab-active" id="lb-tab-all">ALL TIME</button>
+				<button class="lb-tab" id="lb-tab-week">THIS WEEK</button>
+			</div>
 			<ul id="leaderboard-list">
 				<li class="lb-loading">LOADING...</li>
 			</ul>
 			<button id="close-lb-btn">CLOSE</button>
+		</div>
+	</div>
+
+	<!-- Shop Overlay -->
+	<div id="shop-overlay" class="hidden">
+		<div id="shop-panel">
+			<h2>🛒 SKIN SHOP</h2>
+			<p id="shop-coins">🪙 <span id="shop-coin-count">0</span></p>
+			<div id="skin-grid"></div>
+			<button id="close-shop-btn">CLOSE</button>
+		</div>
+	</div>
+
+	<!-- Badges Overlay -->
+	<div id="badges-overlay" class="hidden">
+		<div id="badges-panel">
+			<h2>🏅 ACHIEVEMENTS</h2>
+			<div id="badges-grid"></div>
+			<button id="close-badges-btn">CLOSE</button>
 		</div>
 	</div>
 
@@ -53,6 +76,15 @@
 		<!-- HUD: Combo Counter -->
 		<div id="combo-display" class="hidden"></div>
 
+		<!-- HUD: Near Miss Flash -->
+		<div id="near-miss-flash" class="hidden">NEAR MISS! +25</div>
+		<!-- HUD: Milestone Banner -->
+		<div id="milestone-banner" class="hidden"></div>
+		<!-- HUD: Mute Button -->
+		<button id="mute-btn" title="Toggle Music">🔊</button>
+		<!-- Achievement Toast -->
+		<div id="achievement-toast" class="hidden"></div>
+
 		<!-- Username badge (shown during gameplay) -->
 		<div id="username-badge" class="hidden">
 			<span class="badge-icon">👤</span>
@@ -68,9 +100,13 @@
 		<div id="start-screen" class="center-screen">
 			<h1 class="title">SUPER HOPPER</h1>
 			<p class="subtitle">HOP TO THE TOP</p>
+			<div id="streak-display" class="hidden"></div>
+			<div id="coin-bank-display">🪙 <span id="bank-coins">0</span></div>
 			<button id="start-btn">PRESS START</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn">🏆 LEADERBOARD</button>
+				<button id="shop-btn">🛒 SHOP</button>
+				<button id="badges-btn">🏅 BADGES</button>
 			</div>
 			<a href="https://orynth.dev/projects/subway-hooper-game" target="_blank" rel="noopener" class="orynth-badge">
 				<img src="https://orynth.dev/api/badge/subway-hooper-game?theme=light&style=default" alt="Featured on Orynth" width="260" height="80" />
@@ -86,6 +122,7 @@
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn-go">🏆 LEADERBOARD</button>
 				<button id="share-btn">📤 SHARE SCORE</button>
+				<button id="home-btn">🏠 HOME</button>
 			</div>
 		</div>
 
