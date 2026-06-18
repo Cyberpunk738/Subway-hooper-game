@@ -18,6 +18,40 @@ const CONFIG = {
 	fogDensity: 0.02
 };
 
+// --- PERFORMANCE: Geometry Cache & Helpers ---
+let _cachedGeos = null;
+let _frameNow = 0;
+
+function getCachedGeos() {
+	if (!_cachedGeos) {
+		_cachedGeos = {
+			particle: new THREE.BoxGeometry(0.08, 0.08, 0.08),
+			coin: new THREE.OctahedronGeometry(0.35, 0),
+			coinRing: new THREE.TorusGeometry(0.45, 0.04, 8, 16),
+			trunk: new THREE.CylinderGeometry(0.2, 0.3, 1.5, 5),
+			leaves: new THREE.DodecahedronGeometry(0.8),
+			powerupSphere: new THREE.IcosahedronGeometry(0.4, 1),
+			powerupRing: new THREE.TorusGeometry(0.55, 0.05, 8, 16),
+			shieldSphere: new THREE.SphereGeometry(1.0, 12, 8),
+			obstacleCone: new THREE.ConeGeometry(0.5, 1, 6),
+			obstacleCube: new THREE.BoxGeometry(1, 1, 1),
+			obstacleCylinder: new THREE.CylinderGeometry(0.5, 0.5, 1, 6),
+		};
+	}
+	return _cachedGeos;
+}
+
+function disposeMeshMaterials(obj) {
+	if (obj.isMesh && obj.material) {
+		obj.material.dispose();
+	}
+	if (obj.children) {
+		for (const child of obj.children) {
+			disposeMeshMaterials(child);
+		}
+	}
+}
+
 // --- PLAYER IDENTITY ---
 const STORAGE_KEY = "subway_hopper_username";
 
@@ -170,7 +204,7 @@ let particles = [];
 
 function spawnParticles(position, color, count = 8, spread = 0.5, life = 30) {
 	for (let i = 0; i < count; i++) {
-		const geo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+		const geo = getCachedGeos().particle;
 		const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
 		const mesh = new THREE.Mesh(geo, mat);
 		mesh.position.set(
@@ -197,6 +231,7 @@ function updateParticles() {
 		p.mesh.material.opacity = p.life / p.maxLife;
 		p.mesh.scale.setScalar(p.life / p.maxLife);
 		if (p.life <= 0) {
+			p.mesh.material.dispose();
 			scene.remove(p.mesh);
 			particles.splice(i, 1);
 		}
@@ -210,7 +245,7 @@ function spawnDustTrail() {
 	const pos = player.position.clone();
 	pos.y = 0.1;
 	pos.z += 0.5;
-	spawnParticles(pos, 0xcccccc, 2, 0.3, 15);
+	spawnParticles(pos, 0xcccccc, 1, 0.3, 10);
 }
 
 // --- THEMES ---
@@ -265,7 +300,7 @@ function createPowerupMesh(type) {
 	const group = new THREE.Group();
 
 	// Glowing sphere
-	const sphereGeo = new THREE.IcosahedronGeometry(0.4, 1);
+	const sphereGeo = getCachedGeos().powerupSphere;
 	const sphereMat = new THREE.MeshStandardMaterial({
 		color: type.color,
 		emissive: type.color,
@@ -279,7 +314,7 @@ function createPowerupMesh(type) {
 	group.add(sphere);
 
 	// Outer ring
-	const ringGeo = new THREE.TorusGeometry(0.55, 0.05, 8, 16);
+	const ringGeo = getCachedGeos().powerupRing;
 	const ringMat = new THREE.MeshBasicMaterial({
 		color: type.color,
 		transparent: true,
@@ -299,7 +334,7 @@ function activatePowerup(typeId) {
 		state.shieldTimer = POWERUP_TYPES[0].duration;
 		// Create shield visual
 		if (shieldVisual) scene.remove(shieldVisual);
-		const shieldGeo = new THREE.SphereGeometry(1.0, 12, 8);
+		const shieldGeo = getCachedGeos().shieldSphere;
 		const shieldMat = new THREE.MeshBasicMaterial({
 			color: 0x4fc3f7,
 			transparent: true,
@@ -321,10 +356,12 @@ function activatePowerup(typeId) {
 }
 
 function updatePowerupTimers() {
+	let hudDirty = false;
 	if (state.hasShield) {
 		state.shieldTimer--;
 		if (state.shieldTimer <= 0) {
 			state.hasShield = false;
+			hudDirty = true;
 			if (shieldVisual) {
 				player.remove(shieldVisual);
 				shieldVisual = null;
@@ -333,13 +370,13 @@ function updatePowerupTimers() {
 	}
 	if (state.hasMagnet) {
 		state.magnetTimer--;
-		if (state.magnetTimer <= 0) state.hasMagnet = false;
+		if (state.magnetTimer <= 0) { state.hasMagnet = false; hudDirty = true; }
 	}
 	if (state.has2x) {
 		state.multiplierTimer--;
-		if (state.multiplierTimer <= 0) state.has2x = false;
+		if (state.multiplierTimer <= 0) { state.has2x = false; hudDirty = true; }
 	}
-	updatePowerupHUD();
+	if (hudDirty) updatePowerupHUD();
 }
 
 function updatePowerupHUD() {
@@ -598,10 +635,11 @@ function init() {
 	camera.lookAt(0, 0, -5);
 
 	// Renderer
-	renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+	renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 	renderer.setSize(window.innerWidth, window.innerHeight);
 	renderer.shadowMap.enabled = true;
-	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	renderer.shadowMap.type = THREE.PCFShadowMap;
 	document.getElementById("game-container").appendChild(renderer.domElement);
 
 	// Lights
@@ -611,8 +649,8 @@ function init() {
 	const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 	dirLight.position.set(10, 20, 10);
 	dirLight.castShadow = true;
-	dirLight.shadow.mapSize.width = 1024;
-	dirLight.shadow.mapSize.height = 1024;
+	dirLight.shadow.mapSize.width = 512;
+	dirLight.shadow.mapSize.height = 512;
 	scene.add(dirLight);
 
 	// Initial Render
@@ -732,14 +770,10 @@ function createPlayer() {
 }
 
 function createObstacleMesh() {
-	// Randomize obstacle shape per game
+	// Randomize obstacle shape (cached geometries)
+	const geos = getCachedGeos();
 	const type = Math.floor(Math.random() * 3);
-	const geo =
-		type === 0
-			? new THREE.ConeGeometry(0.5, 1, 6) // Spike
-			: type === 1
-				? new THREE.BoxGeometry(1, 1, 1) // Cube
-				: new THREE.CylinderGeometry(0.5, 0.5, 1, 6); // Barrel
+	const geo = type === 0 ? geos.obstacleCone : type === 1 ? geos.obstacleCube : geos.obstacleCylinder;
 
 	const mat = new THREE.MeshStandardMaterial({
 		color: state.theme.obstacle,
@@ -752,14 +786,14 @@ function createObstacleMesh() {
 }
 
 function createDecorationMesh() {
-	// Trees or Pillars
+	// Trees or Pillars (cached geometries)
+	const geos = getCachedGeos();
 	const group = new THREE.Group();
 	const trunkMat = new THREE.MeshStandardMaterial({
 		color: 0x5d4037,
 		flatShading: true
 	});
-	const trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 1.5, 5);
-	const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+	const trunk = new THREE.Mesh(geos.trunk, trunkMat);
 	trunk.position.y = 0.75;
 	trunk.castShadow = true;
 	group.add(trunk);
@@ -768,8 +802,7 @@ function createDecorationMesh() {
 		color: state.theme.decor,
 		flatShading: true
 	});
-	const leavesGeo = new THREE.DodecahedronGeometry(0.8);
-	const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+	const leaves = new THREE.Mesh(geos.leaves, leavesMat);
 	leaves.position.y = 1.8;
 	leaves.castShadow = true;
 	group.add(leaves);
@@ -778,10 +811,10 @@ function createDecorationMesh() {
 }
 
 function createCoinMesh() {
+	const geos = getCachedGeos();
 	const group = new THREE.Group();
 
-	// Golden spinning coin — octahedron for a gem-like look
-	const coinGeo = new THREE.OctahedronGeometry(0.35, 0);
+	// Golden spinning coin (cached geometry)
 	const coinMat = new THREE.MeshStandardMaterial({
 		color: 0xffd700,
 		emissive: 0xffaa00,
@@ -790,18 +823,17 @@ function createCoinMesh() {
 		metalness: 0.8,
 		roughness: 0.2
 	});
-	const coin = new THREE.Mesh(coinGeo, coinMat);
+	const coin = new THREE.Mesh(geos.coin, coinMat);
 	coin.castShadow = true;
 	group.add(coin);
 
-	// Small glow ring around the coin
-	const ringGeo = new THREE.TorusGeometry(0.45, 0.04, 8, 16);
+	// Small glow ring (cached geometry)
 	const ringMat = new THREE.MeshBasicMaterial({
 		color: 0xffd700,
 		transparent: true,
 		opacity: 0.4
 	});
-	const ring = new THREE.Mesh(ringGeo, ringMat);
+	const ring = new THREE.Mesh(geos.coinRing, ringMat);
 	group.add(ring);
 
 	return group;
@@ -956,7 +988,7 @@ function startGame() {
 	scene.add(floor);
 	floorGroups.push(floor);
 
-	const grid = new THREE.GridHelper(200, 100, 0xffffff, 0xffffff);
+	const grid = new THREE.GridHelper(200, 50, 0xffffff, 0xffffff);
 	grid.position.y = 0.01;
 	grid.position.z = -50;
 	grid.material.opacity = 0.1;
@@ -968,10 +1000,10 @@ function startGame() {
 	player = createPlayer();
 	player.position.set(0, 0, 0);
 
-	// Clear Objects & Particles
-	worldObjects.forEach((obj) => scene.remove(obj.mesh));
+	// Clear Objects & Particles (dispose materials to free GPU memory)
+	worldObjects.forEach((obj) => { disposeMeshMaterials(obj.mesh); scene.remove(obj.mesh); });
 	worldObjects = [];
-	particles.forEach((p) => scene.remove(p.mesh));
+	particles.forEach((p) => { p.mesh.material.dispose(); scene.remove(p.mesh); });
 	particles = [];
 
 	// Loop
@@ -1152,6 +1184,8 @@ function animate() {
 
 	requestAnimationFrame(animate);
 
+	_frameNow = Date.now();
+
 	// Update Score and Speed
 	const scoreAdd = state.has2x ? state.speed * 2 : state.speed;
 	state.score += scoreAdd;
@@ -1172,7 +1206,7 @@ function animate() {
 			state.isJumping = false;
 		}
 	} else {
-		state.playerY = Math.abs(Math.sin(Date.now() * 0.015)) * 0.1;
+		state.playerY = Math.abs(Math.sin(_frameNow * 0.015)) * 0.1;
 	}
 	player.position.y = state.playerY + 0.5;
 
@@ -1191,7 +1225,7 @@ function animate() {
 
 	// Running dust trail
 	dustTimer++;
-	if (dustTimer > 4 && !state.isJumping) {
+	if (dustTimer > 6 && !state.isJumping) {
 		spawnDustTrail();
 		dustTimer = 0;
 	}
@@ -1211,11 +1245,11 @@ function animate() {
 		// Spin coins & powerups
 		if (obj.type === "coin") {
 			obj.mesh.rotation.y += 0.06;
-			obj.mesh.position.y = 1.0 + Math.sin(Date.now() * 0.005 + obj.mesh.position.x) * 0.15;
+			obj.mesh.position.y = 1.0 + Math.sin(_frameNow * 0.005 + obj.mesh.position.x) * 0.15;
 		}
 		if (obj.type === "powerup") {
 			obj.mesh.rotation.y += 0.04;
-			obj.mesh.position.y = 1.2 + Math.sin(Date.now() * 0.004 + obj.mesh.position.x * 2) * 0.2;
+			obj.mesh.position.y = 1.2 + Math.sin(_frameNow * 0.004 + obj.mesh.position.x * 2) * 0.2;
 		}
 
 		// Collision Detection — Obstacles
@@ -1236,6 +1270,7 @@ function animate() {
 						sfxShieldBreak();
 						spawnParticles(obj.mesh.position.clone(), 0x4fc3f7, 10, 0.8, 25);
 						// Remove obstacle
+						disposeMeshMaterials(obj.mesh);
 						scene.remove(obj.mesh);
 						worldObjects.splice(i, 1);
 						updatePowerupHUD();
@@ -1269,6 +1304,7 @@ function animate() {
 					uiCoinDisplay.classList.add("coin-pop");
 					setTimeout(() => uiCoinDisplay.classList.remove("coin-pop"), 150);
 
+					disposeMeshMaterials(obj.mesh);
 					scene.remove(obj.mesh);
 					worldObjects.splice(i, 1);
 					continue;
@@ -1283,6 +1319,7 @@ function animate() {
 				if (dx < 1.0) {
 					activatePowerup(obj.powerupType.id);
 					spawnParticles(obj.mesh.position.clone(), obj.powerupType.color, 10, 0.6, 25);
+					disposeMeshMaterials(obj.mesh);
 					scene.remove(obj.mesh);
 					worldObjects.splice(i, 1);
 					continue;
@@ -1292,6 +1329,7 @@ function animate() {
 
 		// Cleanup
 		if (obj.mesh.position.z > 10) {
+			disposeMeshMaterials(obj.mesh);
 			scene.remove(obj.mesh);
 			worldObjects.splice(i, 1);
 		}
