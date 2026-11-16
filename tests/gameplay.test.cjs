@@ -102,3 +102,18 @@ test('actual simulation moves lanes quickly, lands jumps and caps difficulty',()
  g.run('for(let i=0;i<10000;i++)updateGame();');
  assert.equal(g.run('state.speed'),0.52);
 });
+
+test('new character feet collide on the ground and clear one-unit obstacles when jumping',()=>{
+ for (const [height,expectedHits] of [[0,1],[1.5,0]]) {
+  const g=game();
+  g.run(`
+   let hits=0;
+   gameOver=()=>{hits++; state.isPlaying=false;};
+   state.isPlaying=true; state.isJumping=true; state.playerY=${height};
+   player={position:{x:0,y:0,z:0},rotation:{x:0,z:0}};
+   worldObjects=[{type:'obstacle',mesh:{position:{x:0,y:0.5,z:-0.4}}}];
+   updateGame();
+  `);
+  assert.equal(g.run('hits'),expectedHits);
+ }
+});
