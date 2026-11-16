@@ -4,10 +4,10 @@
 <head>
 	<meta name="ory-verify" content="orynth-6b8a6769ce2e47e586c57d544acca25b" />
 	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 	<title>SUBWAY SUPER HOPPER GAME</title>
 	<meta name="description" content="Subway Super Hopper — a cute endless runner with global leaderboards. Hop to the Top! Jump, dodge, collect coins & power-ups, and compete for the #1 score!" />
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap" />
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
 	<link rel="stylesheet" href="./style.css" />
 </head>
 
@@ -63,9 +63,12 @@
 	</div>
 
 	<div id="ui-layer">
+		<header class="arcade-header"><span class="brand">SUPER HOPPER<span class="brand-dot">®</span></span><span class="edition">THE NEVER-STOP ARCADE</span></header>
+		<button id="pause-btn" class="hidden" aria-label="Pause game">Ⅱ</button>
+		<div id="pause-screen" class="center-screen hidden"><p class="eyebrow">TAKE A BREATHER</p><h1 class="title">ON PAUSE.</h1><p class="subtitle">Your next great run can wait.</p><button id="resume-btn">LET’S GO →</button></div>
 		<!-- HUD: Score -->
 		<div id="score-display" class="hidden">
-			SCORE: <span id="score">0</span>
+			<small>YOUR RUN</small> <span id="score">0</span>
 		</div>
 		<!-- HUD: Coins -->
 		<div id="coin-display" class="hidden">
@@ -92,25 +95,26 @@
 		</div>
 
 		<div id="instructions">
-			STEPS:<br />
-			<span class="key">←</span> <span class="key">→</span> MOVE<br />
+			HOW TO HOP<br />
+			<span class="key">←</span> <span class="key">→</span> SWITCH LANES<br />
 			<span class="key">↑</span> JUMP
 		</div>
 
 		<div id="start-screen" class="center-screen">
-			<h1 class="title">SUPER HOPPER</h1>
-			<p class="subtitle">HOP TO THE TOP</p>
+			<p class="eyebrow">SMALL HOPS. BIG ENERGY.</p>
+			<h1 class="title">SUPER<br /><span>HOPPER</span><i class="star">✳</i></h1>
+			<p class="subtitle">Dodge the chaos. Chase the coins.<br />One more run? Always.</p>
+			<div class="hopper-mascot" aria-hidden="true"><span class="ear left"></span><span class="ear right"></span><span class="mascot-eyes">••</span><span class="mascot-smile"></span><span class="mascot-sticker">LET’S HOP!</span></div>
 			<div id="streak-display" class="hidden"></div>
 			<div id="coin-bank-display">🪙 <span id="bank-coins">0</span></div>
-			<button id="start-btn">PRESS START</button>
+			<button id="start-btn">LET’S PLAY →</button>
 			<div class="screen-btn-row">
-				<button id="leaderboard-btn">🏆 LEADERBOARD</button>
-				<button id="shop-btn">🛒 SHOP</button>
-				<button id="badges-btn">🏅 BADGES</button>
+				<button id="leaderboard-btn">TOP HOPPERS ↗</button>
+				<button id="shop-btn">FRESH SKINS ↗</button>
+				<button id="badges-btn">BRAGGING RIGHTS ↗</button>
 			</div>
-			<a href="https://orynth.dev/projects/subway-hooper-game" target="_blank" rel="noopener" class="orynth-badge">
-				<img src="https://orynth.dev/api/badge/subway-hooper-game?theme=light&style=default" alt="Featured on Orynth" width="260" height="80" />
-			</a>
+			<label class="sensitivity-label" for="sensitivity">SWIPE FEEL <select id="sensitivity"><option value="10">SUPER SENSITIVE</option><option value="14" selected>SNAPPY</option><option value="24">STEADY</option></select></label>
+			<div class="play-tips"><span><b>01</b> SWIPE TO DODGE</span><span><b>02</b> TAP TO JUMP</span><span><b>03</b> CHASE YOUR BEST</span></div>
 		</div>
 
 		<div id="game-over-screen" class="center-screen hidden">
@@ -120,7 +124,7 @@
 			<p id="personal-best" class="hidden">BEST: <span id="best-score">0</span></p>
 			<button id="restart-btn">TRY AGAIN</button>
 			<div class="screen-btn-row">
-				<button id="leaderboard-btn-go">🏆 LEADERBOARD</button>
+				<button id="leaderboard-btn-go">TOP HOPPERS ↗</button>
 				<button id="share-btn">📤 SHARE SCORE</button>
 				<button id="home-btn">🏠 HOME</button>
 			</div>
