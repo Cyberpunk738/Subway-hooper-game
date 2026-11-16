@@ -1100,3 +1100,17 @@ select { font:700 10px var(--pixel-font); padding:8px; background:transparent; b
 }
 @media(max-height:650px) { .center-screen { justify-content:flex-start; padding-top:90px; }.title { font-size:70px; }.play-tips { margin-top:18px; }#game-over-screen { padding:24px; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+
+/* Sharing stays usable when embedded browsers deny native share and clipboard. */
+#share-overlay { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(20,20,20,.65); backdrop-filter:blur(2px); }
+.share-panel { width:min(440px,100%); max-height:90dvh; overflow:auto; padding:28px; background:var(--paper); border:3px solid var(--ink); border-radius:24px; box-shadow:7px 8px 0 var(--ink); text-align:center; }
+.share-panel h2 { font:700 38px 'Fredoka',sans-serif; margin-bottom:20px; letter-spacing:-1px; }
+.share-panel label { display:block; text-align:left; font-size:11px; font-weight:700; margin-bottom:8px; }
+#share-text { display:block; width:100%; padding:14px; border:2px solid var(--ink); border-radius:12px; font:500 14px/1.6 var(--pixel-font); background:white; color:var(--ink); resize:vertical; user-select:text; }
+#share-status { min-height:40px; font-size:12px; line-height:1.5; margin:12px 0; }
+#copy-score-btn { width:100%; background:var(--lime); font-size:13px; }
+.share-links { display:flex; gap:12px; margin:20px 0; }
+.share-links a { flex:1; color:var(--ink); border:2px solid; border-radius:12px; background:var(--yellow); padding:12px 6px; font-size:11px; font-weight:700; text-decoration:none; }
+.share-links a:last-child { background:var(--pink); }
+.share-links a:focus-visible { outline:4px solid #ad6cff; outline-offset:3px; }
+#close-share-btn { background:transparent; font-size:11px; box-shadow:none; }

@@ -61,6 +61,19 @@
 		</div>
 	</div>
 
+	<div id="share-overlay" class="hidden">
+		<section class="share-panel" role="dialog" aria-modal="true" aria-labelledby="share-title">
+			<p class="eyebrow">MAKE IT A CHALLENGE</p>
+			<h2 id="share-title">BEAT MY RUN.</h2>
+			<label for="share-text">Your score and game link</label>
+			<textarea id="share-text" rows="5" readonly spellcheck="false"></textarea>
+			<p id="share-status" role="status" aria-live="polite"></p>
+			<button id="copy-score-btn">COPY SCORE + LINK</button>
+			<div class="share-links"><a id="share-whatsapp" target="_blank" rel="noopener noreferrer">WHATSAPP ↗</a><a id="share-x" target="_blank" rel="noopener noreferrer">POST TO X ↗</a></div>
+			<button id="close-share-btn">BACK TO MY RUN</button>
+		</section>
+	</div>
+
 	<div id="ui-layer">
 		<header class="arcade-header"><span class="brand">SUPER HOPPER<span class="brand-dot">®</span></span><span class="edition">THE NEVER-STOP ARCADE</span></header>
 		<button id="pause-btn" class="hidden" aria-label="Pause game">Ⅱ</button>

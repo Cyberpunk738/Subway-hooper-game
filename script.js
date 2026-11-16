@@ -74,6 +74,7 @@ function getCachedGeos() {
 			powerupSphere: new THREE.IcosahedronGeometry(0.4, 1),
 			powerupRing: new THREE.TorusGeometry(0.55, 0.05, 8, 16),
 			shieldSphere: new THREE.SphereGeometry(1.0, 12, 8),
+			coneBand: new THREE.CylinderGeometry(0.152, 0.245, 0.2, 6),
 			obstacleCone: new THREE.ConeGeometry(0.5, 1, 6),
 			obstacleCube: new THREE.BoxGeometry(1, 1, 1),
 			obstacleCylinder: new THREE.CylinderGeometry(0.5, 0.5, 1, 6),
@@ -83,14 +84,9 @@ function getCachedGeos() {
 }
 
 function disposeMeshMaterials(obj) {
-	if (obj.isMesh && obj.material) {
-		obj.material.dispose();
-	}
-	if (obj.children) {
-		for (const child of obj.children) {
-			disposeMeshMaterials(child);
-		}
-	}
+	const materials = new Set();
+	obj.traverse(child => { if (child.material) materials.add(child.material); });
+	materials.forEach(material => material.dispose());
 }
 
 // --- PLAYER IDENTITY ---
@@ -831,32 +827,86 @@ let currentLBTab = "all";
 // SHARE SCORE
 // =============================================
 
-async function shareScore() {
-	const score = elScoreFinal.innerText;
-	const coins = elFinalCoins.innerText;
+let shareInProgress = false;
+let shareDialogReturnFocus = null;
+
+function scoreShareData() {
+	// Share the current deployment rather than a hard-coded, possibly stale host.
+	const url = new URL(window.location.href);
+	url.search = "";
+	url.hash = "";
 	const name = currentUsername || "A player";
-	const text = `🏃 ${name} scored ${score} points and collected ${coins} coins on Super Hopper! 🪙\nCan you beat it? 🔗\nhttps://subway-hooper-game.vercel.app`;
+	const text = `🏃 ${name} scored ${Math.floor(state.score)} points and collected ${state.coins} coins on Super Hopper! 🪙\nCan you beat it?`;
+	return { title: "Super Hopper Score!", text, url: url.href };
+}
 
-	// Try Web Share API first (mobile)
-	if (navigator.share) {
+async function shareScore() {
+	if (shareInProgress) return;
+	const data = scoreShareData();
+	if (typeof navigator.share === "function") {
+		shareInProgress = true;
 		try {
-			await navigator.share({ title: "Super Hopper Score!", text });
+			await navigator.share(data);
 			return;
-		} catch (e) { /* user cancelled or unsupported */ }
-	}
-
-	// Fallback: copy to clipboard
-	try {
-		await navigator.clipboard.writeText(text);
-		if (btnShare) {
-			const orig = btnShare.textContent;
-			btnShare.textContent = "✅ COPIED!";
-			setTimeout(() => { btnShare.textContent = orig; }, 1500);
+		} catch (error) {
+			// Cancelling the system sheet is intentional, not a clipboard request.
+			if (error.name === "AbortError") return;
+		} finally {
+			shareInProgress = false;
 		}
-	} catch (e) {
-		// Last resort
-		prompt("Copy your score:", text);
 	}
+	openScoreShareDialog(data);
+}
+
+function openScoreShareDialog(data = scoreShareData()) {
+	const overlay = document.getElementById("share-overlay");
+	const text = `${data.text}\n${data.url}`;
+	shareDialogReturnFocus = document.activeElement;
+	document.getElementById("share-text").value = text;
+	document.getElementById("share-status").textContent = "Copy your score or choose an app below.";
+	document.getElementById("share-whatsapp").href = `https://wa.me/?text=${encodeURIComponent(text)}`;
+	document.getElementById("share-x").href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(data.text)}&url=${encodeURIComponent(data.url)}`;
+	overlay.classList.remove("hidden");
+	document.getElementById("copy-score-btn").focus();
+}
+
+function closeScoreShareDialog() {
+	document.getElementById("share-overlay").classList.add("hidden");
+	shareDialogReturnFocus?.focus();
+}
+
+async function copyScore() {
+	const field = document.getElementById("share-text");
+	const status = document.getElementById("share-status");
+	try {
+		if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+		await navigator.clipboard.writeText(field.value);
+		status.textContent = "Score copied! Paste it into your favourite app.";
+	} catch {
+		// Embedded browsers may deny clipboard access and block window.prompt.
+		// Keep a visible, selectable field as a reliable final fallback.
+		field.focus();
+		field.select();
+		field.setSelectionRange(0, field.value.length);
+		let copied = false;
+		try { copied = document.execCommand("copy"); } catch { /* manual selection remains */ }
+		status.textContent = copied ? "Score copied! Paste it into your favourite app." : "Your score is selected. Long-press or press Ctrl/Cmd+C to copy.";
+	}
+}
+
+function initScoreShareHandlers() {
+	const overlay = document.getElementById("share-overlay");
+	document.getElementById("copy-score-btn").addEventListener("click", copyScore);
+	document.getElementById("close-share-btn").addEventListener("click", closeScoreShareDialog);
+	overlay.addEventListener("click", e => { if (e.target === overlay) closeScoreShareDialog(); });
+	overlay.addEventListener("keydown", e => {
+		if (e.key === "Escape") { e.preventDefault(); closeScoreShareDialog(); }
+		if (e.key !== "Tab") return;
+		const focusable = [...overlay.querySelectorAll("textarea,button,a[href]")];
+		const first = focusable[0], last = focusable[focusable.length - 1];
+		if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+		else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+	});
 }
 
 // =============================================
@@ -1073,6 +1123,7 @@ function init() {
 
 	// Share button
 	if (btnShare) btnShare.addEventListener("click", shareScore);
+	initScoreShareHandlers();
 
 	// Mute button
 	const muteBtnInit = document.getElementById("mute-btn");
@@ -1172,6 +1223,8 @@ function createPlayer() {
 	}
 	part(geo.rounded, eye, 0, 0.93, 0.4, 0.05, 0.035, 0.025);
 	// A cross-body bag adds a contrasting detail at game scale.
+	// Back seam and a small hoodie patch remain visible from the chase camera.
+	part(geo.unitBox, cream, 0, 0.53, -0.28, 0.13, 0.16, 0.025);
 	const strap = part(geo.unitBox, ink, 0, 0.49, 0.28, 0.09, 0.5, 0.035);
 	strap.rotation.z = -0.55;
 	part(geo.rounded, accent, 0.2, 0.37, 0.28, 0.16, 0.12, 0.08);
@@ -1191,6 +1244,8 @@ function createPlayer() {
 		limbs.push({ arm, leg, side });
 	}
 	group.userData.limbs = limbs;
+	// The track extends along negative Z; the camera follows from positive Z.
+	group.rotation.y = Math.PI;
 	scene.add(group);
 	return group;
 }
@@ -1205,20 +1260,56 @@ function animateCharacter() {
 	}
 }
 
-function createObstacleMesh() {
-	// Randomize obstacle shape (cached geometries)
-	const geos = getCachedGeos();
-	const type = Math.floor(Math.random() * 3);
-	const geo = type === 0 ? geos.obstacleCone : type === 1 ? geos.obstacleCube : geos.obstacleCylinder;
+const OBSTACLES = [
+	{ id: "barricade", width: 1.14, depth: 0.65, height: 0.96 },
+	{ id: "cone", width: 0.86, depth: 0.86, height: 0.98 },
+	{ id: "barrel", width: 0.86, depth: 0.86, height: 1.08 }
+];
 
-	const mat = new THREE.MeshStandardMaterial({
-		color: state.theme.obstacle,
-		flatShading: true
-	});
-	const mesh = new THREE.Mesh(geo, mat);
-	mesh.castShadow = true;
-	mesh.receiveShadow = true;
-	return mesh;
+function createObstacleMesh(kind = Math.floor(Math.random() * OBSTACLES.length)) {
+	const definition = OBSTACLES[kind];
+	const group = new THREE.Group();
+	const geo = getCachedGeos();
+	const yellow = definition.id === "barricade" ? new THREE.MeshStandardMaterial({ color: 0xffd83f, roughness: 0.7 }) : null;
+	const orange = new THREE.MeshStandardMaterial({ color: 0xff6540, roughness: 0.75 });
+	const dark = new THREE.MeshStandardMaterial({ color: 0x25263b, roughness: 0.85 });
+	const white = new THREE.MeshStandardMaterial({ color: 0xfff4da, roughness: 0.6 });
+	function part(geometry, material, x, y, z, sx, sy, sz) {
+		const mesh = new THREE.Mesh(geometry, material);
+		mesh.position.set(x, y, z);
+		mesh.scale.set(sx, sy, sz);
+		mesh.castShadow = mesh.receiveShadow = true;
+		group.add(mesh);
+		return mesh;
+	}
+	if (definition.id === "barricade") {
+		for (const side of [-1, 1]) {
+			part(geo.unitBox, dark, side * 0.4, 0.06, 0, 0.3, 0.12, 0.65);
+			part(geo.unitBox, white, side * 0.4, 0.43, 0, 0.1, 0.74, 0.12);
+		}
+		part(geo.unitBox, yellow, 0, 0.65, 0, 1.14, 0.4, 0.2);
+		// Diagonal hazard bands are visible from both directions.
+		for (const z of [-0.105, 0.105]) {
+			for (const x of [-0.37, 0, 0.37]) {
+				const stripe = part(geo.unitBox, dark, x, 0.65, z, 0.13, 0.37, 0.012);
+				stripe.rotation.z = -0.38;
+			}
+		}
+		part(geo.rounded, orange, 0, 0.9, 0, 0.085, 0.06, 0.085);
+	} else if (definition.id === "cone") {
+		part(geo.unitBox, dark, 0, 0.06, 0, 0.86, 0.12, 0.86);
+		part(geo.obstacleCone, orange, 0, 0.55, 0, 0.76, 0.86, 0.76);
+		// Separate tapered white band, lifted just outside the orange surface.
+		part(geo.coneBand, white, 0, 0.56, 0, 1, 1, 1);
+	} else {
+		part(geo.obstacleCylinder, orange, 0, 0.54, 0, 0.82, 1.04, 0.82);
+		for (const y of [0.08, 1.02]) part(geo.obstacleCylinder, dark, 0, y, 0, 0.86, 0.12, 0.86);
+		for (const y of [0.35, 0.72]) part(geo.obstacleCylinder, white, 0, y, 0, 0.835, 0.14, 0.835);
+		part(geo.obstacleCylinder, dark, 0, 1.065, 0, 0.16, 0.03, 0.16);
+	}
+	group.userData.hitbox = { halfWidth: definition.width / 2 + 0.28, halfDepth: definition.depth / 2 + 0.5, height: definition.height };
+	group.userData.obstacleType = definition.id;
+	return group;
 }
 
 function createDecorationMesh() {
@@ -1357,7 +1448,7 @@ function spawnRow(zStart = -60) {
 		obstacleLane = lane;
 
 		const obs = createObstacleMesh();
-		obs.position.set(lane * CONFIG.laneWidth, 0.5, zStart);
+		obs.position.set(lane * CONFIG.laneWidth, 0, zStart);
 		scene.add(obs);
 		worldObjects.push({ mesh: obs, type: "obstacle", lane: lane, passed: false });
 	}
@@ -1599,7 +1690,7 @@ function requestJump() {
 	if (state.isPlaying && !paused) jumpBuffer = 8;
 }
 function overlayOpen() {
-	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay")]
+	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay"), document.getElementById("share-overlay")]
 		.some(el => !el.classList.contains("hidden"));
 }
 function handleInput(e) {
@@ -1799,12 +1890,13 @@ function updateGame() {
 
 		// Collision Detection — Obstacles
 		if (obj.type === "obstacle") {
-			if (obj.mesh.position.z > -0.8 && obj.mesh.position.z < 0.8) {
+			const hitbox = obj.mesh.userData?.hitbox || { halfWidth: 0.8, halfDepth: 0.8, height: 0.95 };
+			if (Math.abs(obj.mesh.position.z) < hitbox.halfDepth) {
 				const dx = Math.abs(player.position.x - obj.mesh.position.x);
 				// Match clearance to the new runner’s feet, rather than its visual origin.
-				const feetClearObstacle = state.playerY >= 0.95;
+				const feetClearObstacle = state.playerY + 0.05 >= hitbox.height;
 
-				if (dx < 0.8 && !feetClearObstacle) {
+				if (dx < hitbox.halfWidth && !feetClearObstacle) {
 					if (state.hasShield) {
 						// Shield absorbs the hit
 						state.hasShield = false;
@@ -1834,7 +1926,7 @@ function updateGame() {
 		if (obj.type === "obstacle" && !obj.nearMissChecked && obj.mesh.position.z > 1.0) {
 			obj.nearMissChecked = true;
 			const nmDx = Math.abs(player.position.x - obj.mesh.position.x);
-			if (nmDx < 1.5 && nmDx >= 0.8) {
+			if (nmDx < 1.5 && nmDx >= (obj.mesh.userData?.hitbox?.halfWidth || 0.8)) {
 				state.nearMissCount++;
 				state.score += 25;
 				showNearMiss();

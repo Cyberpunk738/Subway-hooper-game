@@ -29,12 +29,19 @@ Mobile also has dedicated direction and jump buttons. Swipes trigger while the f
 - Faster lane interpolation, a short jump input buffer, a brisk opening pace, spaced obstacle rows, and a capped maximum speed.
 - Automatic pause when the tab is hidden or the window loses focus. Resume manually to avoid surprise collisions.
 - Reused world geometry, disposal of retired player/floor resources, fewer HUD writes, and a 1.5 pixel-ratio cap with dynamic shadows disabled on touch devices.
-- Expressive low-poly animal runners with hoodie details, cross-body bags, sneakers and animated arms/legs. Skin choices retain a consistent bunny, bear or cat silhouette.
+- Striped road barricades, traffic cones and banded barrels with individual collision widths and jump-clearance heights. All hazard geometry is cached.
+- Expressive low-poly animal runners with hoodie details, cross-body bags, sneakers and animated arms/legs. Skin choices retain a consistent bunny, bear or cat silhouette. Runners face down the negative-Z track, away from the chase camera.
 - A pastel city skyline, warm sun, cloud puffs, planter trees, raised verges and moving road dashes. Buildings, windows and clouds use instanced geometry to limit draw calls.
 - Distant fog starts at 32 units instead of 10; menu backdrop blur is reduced to 2px. Nearby characters and hazards stay clear.
 - Bright arcade menus, touch controls, skins, badges, daily streaks and optional online leaderboards.
 
 Scores, purchased skins, coins, achievements, name and settings are stored in the current browser. Scores from before the timing change may have been affected by the device's refresh rate.
+
+## Share a score
+
+After a run, **Share Score** opens the system share sheet when the browser permits it. Unsupported or denied native sharing opens a score dialog with WhatsApp/X links, a copy button and selectable text. Cancelling the system sheet leaves the score alone. The link uses the current deployment URL without tracking parameters or fragments.
+
+If clipboard access is denied, the dialog tries legacy copy and then leaves the text selected with manual-copy instructions. No popup prompts or automatic social posts are used.
 
 ## Checks
 
@@ -45,4 +52,4 @@ node --check script.js
 node --test tests/gameplay.test.cjs
 ```
 
-The tests exercise controls, gesture cancellation, sensitivity persistence, pause, refresh-rate timing, bounded catch-up, loop ownership and simulation movement. They use a small DOM/rendering harness; visual rendering and physical-device feel require browser testing.
+The tests exercise native-share success/cancellation/denial, repeated share taps, clipboard/manual-copy fallbacks, modal input blocking, controls, gesture cancellation, sensitivity persistence, pause, refresh-rate timing, bounded catch-up, loop ownership and simulation movement. They use a small DOM/rendering harness; visual rendering and physical-device feel require browser testing.
