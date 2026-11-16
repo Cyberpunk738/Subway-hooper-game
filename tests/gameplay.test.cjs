@@ -8,16 +8,17 @@ function game() {
  function element(id) {
   if (!elements.has(id)) elements.set(id, {
    value:'', textContent:'', listeners:{},
-   classList:{add(){},remove(){},toggle(){},contains(){return true;}},
+   focus(){this.focused=true;}, select(){this.selected=true;}, setSelectionRange(a,b){this.selection=[a,b];},
+   classList:{hidden:true,add(name){if(name==="hidden")this.hidden=true;},remove(name){if(name==="hidden")this.hidden=false;},toggle(){},contains(name){return name==="hidden" && this.hidden;}},
    addEventListener(type, fn){this.listeners[type]=fn;},
    setPointerCapture(){}, closest(){return null;}
   });
   return elements.get(id);
  }
  const storage = new Map();
- const context = vm.createContext({console, Math, Date, Number, String, Set,
+ const context = vm.createContext({console, Math, Date, Number, String, Set, URL,
   document:{getElementById:element,body:{classList:{add(){},remove(){}}}},
-  window:{}, navigator:{maxTouchPoints:0},
+  window:{location:{href:"https://hopper.example/play/?tracking=1#run"}}, navigator:{maxTouchPoints:0},
   localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},
   performance:{now:()=>100}, requestAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
@@ -116,4 +117,68 @@ test('new character feet collide on the ground and clear one-unit obstacles when
   `);
   assert.equal(g.run('hits'),expectedHits);
  }
+});
+
+test('unsupported native sharing opens a visible fallback with correct score and current URL',async()=>{
+ const g=game();g.run('state.score=1234.8; state.coins=17; currentUsername="Afeez";');
+ await g.run('shareScore()');
+ assert.equal(g.element('share-overlay').classList.contains('hidden'),false);
+ assert.match(g.element('share-text').value,/Afeez scored 1234 points and collected 17 coins/);
+ assert.ok(g.element('share-text').value.endsWith('https://hopper.example/play/'));
+ assert.equal(new URL(g.element('share-whatsapp').href).searchParams.get('text'),g.element('share-text').value);
+ assert.equal(g.element('copy-score-btn').focused,true);
+});
+
+test('native sharing uses structured data and does not copy or open fallback on success',async()=>{
+ const g=game();g.run('let shared; navigator.share=async data=>{shared=data};');
+ await g.run('shareScore()');
+ assert.equal(g.run('shared.url'),'https://hopper.example/play/');
+ assert.equal(g.element('share-overlay').classList.contains('hidden'),true);
+ assert.equal(g.run('shareInProgress'),false);
+});
+
+test('native cancellation stays cancelled; denied native share opens fallback',async()=>{
+ const g=game();g.run('navigator.share=async()=>{throw {name:"AbortError"}};');
+ await g.run('shareScore()');
+ assert.equal(g.element('share-overlay').classList.contains('hidden'),true);
+ g.run('navigator.share=async()=>{throw {name:"NotAllowedError"}};');
+ await g.run('shareScore()');
+ assert.equal(g.element('share-overlay').classList.contains('hidden'),false);
+});
+
+test('repeated taps do not open concurrent native share requests',async()=>{
+ const g=game();g.run('let shares=0, finish; navigator.share=()=>{shares++;return new Promise(resolve=>{finish=resolve})};');
+ const pending=g.run('shareScore()');
+ await g.run('shareScore()');
+ assert.equal(g.run('shares'),1);
+ g.run('finish()');await pending;
+ assert.equal(g.run('shareInProgress'),false);
+});
+
+test('copy feedback reports success only when clipboard write succeeds',async()=>{
+ const g=game();await g.run('shareScore()');
+ g.run('let copied; navigator.clipboard={writeText:async text=>{copied=text}};');
+ await g.run('copyScore()');
+ assert.equal(g.run('copied'),g.element('share-text').value);
+ assert.match(g.element('share-status').textContent,/Score copied!/);
+});
+
+test('denied clipboard access leaves selectable text instead of a blocked popup',async()=>{
+ const g=game();await g.run('shareScore()');
+ g.run('navigator.clipboard={writeText:async()=>{throw new Error("Denied")}}; document.execCommand=()=>false;');
+ await g.run('copyScore()');
+ assert.equal(g.element('share-text').selected,true);
+ assert.deepEqual(g.element('share-text').selection,[0,g.element('share-text').value.length]);
+ assert.match(g.element('share-status').textContent,/Long-press/);
+ g.run('navigator.clipboard=undefined; document.execCommand=()=>true;');
+ await g.run('copyScore()');
+ assert.match(g.element('share-status').textContent,/Score copied!/);
+});
+
+test('share dialog blocks background start shortcuts',()=>{
+ const g=game();g.run('let starts=0; startGame=()=>starts++; openScoreShareDialog();');
+ g.run('handleInput({target:{closest(){return null;}},code:"Space",preventDefault(){}})');
+ assert.equal(g.run('starts'),0);
+ g.run('closeScoreShareDialog()');
+ assert.equal(g.element('share-overlay').classList.contains('hidden'),true);
 });
