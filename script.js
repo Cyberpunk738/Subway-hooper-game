@@ -13,7 +13,8 @@ const CONFIG = {
 	cameraOffset: { x: 0, y: 7, z: 10 },
 	gravity: 0.015,
 	jumpPower: 0.35,
-	baseSpeed: 0.2,
+	baseSpeed: 0.26,
+	maxSpeed: 0.52,
 	speedInc: 0.0001,
 	floorLength: 400,
 	fogDensity: 0.02
@@ -140,6 +141,7 @@ let currentUsername = null;
 let audioCtx = null;
 
 function ensureAudio() {
+	if (isMuted) return null;
 	if (!audioCtx) {
 		audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 	}
@@ -152,6 +154,7 @@ function ensureAudio() {
 function playTone(freq, duration, type = "square", volume = 0.15) {
 	try {
 		const ctx = ensureAudio();
+		if (!ctx) return;
 		const osc = ctx.createOscillator();
 		const gain = ctx.createGain();
 		osc.type = type;
@@ -324,6 +327,7 @@ function spawnDustTrail() {
 
 // --- THEMES ---
 const THEMES = [
+	{ name: "Arcade", sky: 0xc9b4ff, ground: 0x24232e, obstacle: 0xff408c, decor: 0x21f14f },
 	{
 		name: "Candy",
 		sky: 0xffd1dc,
@@ -407,7 +411,7 @@ function activatePowerup(typeId) {
 		state.hasShield = true;
 		state.shieldTimer = POWERUP_TYPES[0].duration;
 		// Create shield visual
-		if (shieldVisual) scene.remove(shieldVisual);
+		if (shieldVisual) { player.remove(shieldVisual); shieldVisual.material.dispose(); }
 		const shieldGeo = getCachedGeos().shieldSphere;
 		const shieldMat = new THREE.MeshBasicMaterial({
 			color: 0x4fc3f7,
@@ -438,6 +442,7 @@ function updatePowerupTimers() {
 			hudDirty = true;
 			if (shieldVisual) {
 				player.remove(shieldVisual);
+				shieldVisual.material.dispose();
 				shieldVisual = null;
 			}
 		}
@@ -1020,9 +1025,9 @@ function init() {
 
 	// Renderer
 	renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice() ? 1.5 : 2));
 	renderer.setSize(window.innerWidth, window.innerHeight);
-	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.enabled = !isTouchDevice();
 	renderer.shadowMap.type = THREE.PCFShadowMap;
 	document.getElementById("game-container").appendChild(renderer.domElement);
 
@@ -1052,6 +1057,7 @@ function init() {
 	// On-screen Mobile Buttons
 	initMobileButtons();
 
+	initRunSettings();
 	// UI Handlers
 	document.getElementById("start-btn").addEventListener("click", startGame);
 	document.getElementById("restart-btn").addEventListener("click", startGame);
@@ -1129,7 +1135,7 @@ function randomTheme() {
 }
 
 function createPlayer() {
-	if (player) scene.remove(player);
+	if (player) { disposeOwnedObject(player); scene.remove(player); }
 
 	const group = new THREE.Group();
 
@@ -1273,9 +1279,7 @@ let spawnTimer = 0;
 let lastObstacleLane = -99;
 let powerupSpawnCounter = 0;
 
-function spawnRow() {
-	// Spawn row at far Z (-60)
-	const zStart = -60;
+function spawnRow(zStart = -60) {
 
 	// Left Decor
 	if (Math.random() > 0.3) {
@@ -1350,7 +1354,7 @@ function startGame() {
 		isJumping: false,
 		jumpVel: 0,
 		playerY: 0,
-		theme: randomTheme(),
+		theme: THEMES[0],
 		hasShield: false,
 		hasMagnet: false,
 		has2x: false,
@@ -1367,6 +1371,17 @@ function startGame() {
 	};
 
 	powerupSpawnCounter = 0;
+	spawnTimer = 0;
+	dustTimer = 0;
+	simulationTime = 0;
+	jumpBuffer = 0;
+	paused = false;
+	deathTicks = 0;
+	gesture = null;
+	document.body.classList.add("running");
+	document.getElementById("pause-screen").classList.add("hidden");
+	document.getElementById("pause-btn").classList.remove("hidden");
+	document.getElementById("pause-btn").textContent = "Ⅱ";
 	shieldVisual = null;
 
 	// UI
@@ -1403,14 +1418,14 @@ function startGame() {
 	scene.fog = new THREE.Fog(state.theme.sky, 10, 50);
 
 	// Floor
-	floorGroups.forEach((f) => scene.remove(f));
+	floorGroups.forEach((f) => { disposeOwnedObject(f); scene.remove(f); });
 	floorGroups = [];
 
 	const planeGeo = new THREE.PlaneGeometry(100, 200);
 	const planeMat = new THREE.MeshStandardMaterial({
 		color: state.theme.ground,
 		roughness: 1,
-		shading: THREE.FlatShading
+		flatShading: true
 	});
 	const floor = new THREE.Mesh(planeGeo, planeMat);
 	floor.rotation.x = -Math.PI / 2;
@@ -1427,6 +1442,15 @@ function startGame() {
 	scene.add(grid);
 	floorGroups.push(grid);
 
+	// High contrast lane markings keep the route readable on a small screen.
+	for (const x of [-3.75, -1.25, 1.25, 3.75]) {
+		const stripe = new THREE.Mesh(new THREE.PlaneGeometry(0.055, 200), new THREE.MeshBasicMaterial({ color: Math.abs(x) > 3 ? 0x21f14f : 0xeeeeee }));
+		stripe.rotation.x = -Math.PI / 2;
+		stripe.position.set(x, 0.02, -50);
+		scene.add(stripe);
+		floorGroups.push(stripe);
+	}
+
 	// Player
 	player = createPlayer();
 	player.position.set(0, 0, 0);
@@ -1437,9 +1461,12 @@ function startGame() {
 	particles.forEach((p) => { p.mesh.material.dispose(); scene.remove(p.mesh); });
 	particles = [];
 
-	// Loop
-	lastTime = Date.now();
-	animate();
+	for (let z = -22; z >= -60; z -= 15) spawnRow(z);
+
+	// A single animation loop owns simulation, rendering and death effects.
+	lastTime = performance.now();
+	accumulator = 0;
+	ensureLoop();
 }
 
 function goHome() {
@@ -1450,7 +1477,11 @@ function goHome() {
 }
 
 function gameOver() {
+	if (!state.isPlaying) return;
 	state.isPlaying = false;
+	deathTicks = 60;
+	document.body.classList.remove("running");
+	document.getElementById("pause-btn").classList.add("hidden");
 
 	sfxCrash();
 
@@ -1490,162 +1521,148 @@ function gameOver() {
 	// Check achievements
 	checkAchievements();
 
-	// Keep rendering briefly for death particles
-	let deathFrames = 0;
-	function deathAnim() {
-		if (deathFrames > 60) return;
-		deathFrames++;
-		updateParticles();
-		renderer.render(scene, camera);
-		requestAnimationFrame(deathAnim);
-	}
-	deathAnim();
 }
 
+// All controls use the same actions. A short jump buffer makes late landing taps count.
+let jumpBuffer = 0;
+let paused = false;
+let gesture = null;
+let swipeThreshold = Number(localStorage.getItem("hopper_sensitivity")) || 14;
+function moveLane(direction) {
+	if (state.isPlaying && !paused) state.lane = Math.max(-1, Math.min(1, state.lane + direction));
+}
+function requestJump() {
+	if (state.isPlaying && !paused) jumpBuffer = 8;
+}
+function overlayOpen() {
+	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay")]
+		.some(el => !el.classList.contains("hidden"));
+}
 function handleInput(e) {
+	if (e.target.closest("input, select, textarea") || overlayOpen()) return;
+	if (e.target.closest("button") && ["Space", "Enter"].includes(e.code)) return;
+	if (!["ArrowLeft", "ArrowRight", "ArrowUp", "Space", "Enter", "Escape", "KeyP", "KeyA", "KeyD", "KeyW"].includes(e.code)) return;
+	e.preventDefault();
+	if (e.repeat) return;
+	if (e.code === "Escape" || e.code === "KeyP") { togglePause(); return; }
 	if (!state.isPlaying) {
 		if (e.code === "Space" || e.code === "Enter") startGame();
 		return;
 	}
-
-	if (e.code === "ArrowLeft") {
-		if (state.lane > -1) state.lane--;
-	} else if (e.code === "ArrowRight") {
-		if (state.lane < 1) state.lane++;
-	} else if (e.code === "ArrowUp") {
-		if (!state.isJumping) {
-			state.isJumping = true;
-			state.jumpVel = CONFIG.jumpPower;
-			sfxJump();
-		}
-	}
+	if (paused) return;
+	if (["ArrowLeft", "KeyA"].includes(e.code)) moveLane(-1);
+	else if (["ArrowRight", "KeyD"].includes(e.code)) moveLane(1);
+	else requestJump();
 }
-
-// --- TOUCH / SWIPE CONTROLS ---
-let touchStartX = 0;
-let touchStartY = 0;
-let touchStartTime = 0;
-const SWIPE_THRESHOLD = 30;
-const SWIPE_TIME_LIMIT = 400;
-
 function initTouchControls() {
 	const el = document.getElementById("game-container");
-
-	el.addEventListener("touchstart", (e) => {
-		const touch = e.touches[0];
-		touchStartX = touch.clientX;
-		touchStartY = touch.clientY;
-		touchStartTime = Date.now();
-	}, { passive: true });
-
-	el.addEventListener("touchend", (e) => {
-		const touch = e.changedTouches[0];
-		const dx = touch.clientX - touchStartX;
-		const dy = touch.clientY - touchStartY;
-		const dt = Date.now() - touchStartTime;
-
-		if (dt > SWIPE_TIME_LIMIT) return;
-
-		const absDx = Math.abs(dx);
-		const absDy = Math.abs(dy);
-
-		if (absDx < SWIPE_THRESHOLD && absDy < SWIPE_THRESHOLD) {
-			if (state.isPlaying && !state.isJumping) {
-				state.isJumping = true;
-				state.jumpVel = CONFIG.jumpPower;
-				sfxJump();
-			}
-			return;
-		}
-
-		if (!state.isPlaying) return;
-
-		if (absDx > absDy) {
-			if (dx < 0 && state.lane > -1) {
-				state.lane--;
-			} else if (dx > 0 && state.lane < 1) {
-				state.lane++;
-			}
-		} else {
-			if (dy < 0 && !state.isJumping) {
-				state.isJumping = true;
-				state.jumpVel = CONFIG.jumpPower;
-				sfxJump();
-			}
-		}
-	}, { passive: true });
-
-	document.addEventListener("touchmove", (e) => {
-		if (state.isPlaying) {
-			e.preventDefault();
-		}
-	}, { passive: false });
+	el.addEventListener("pointerdown", e => {
+		if (!state.isPlaying || paused || !e.isPrimary) return;
+		gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, used: false, started: performance.now() };
+		el.setPointerCapture(e.pointerId);
+	});
+	el.addEventListener("pointermove", e => {
+		if (!gesture || gesture.id !== e.pointerId || gesture.used || paused) return;
+		const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+		if (Math.max(Math.abs(dx), Math.abs(dy)) < swipeThreshold) return;
+		gesture.used = true;
+		if (Math.abs(dx) > Math.abs(dy)) moveLane(Math.sign(dx));
+		else if (dy < 0) requestJump();
+	});
+	el.addEventListener("pointerup", e => {
+		if (!gesture || gesture.id !== e.pointerId) return;
+		if (!gesture.used && performance.now() - gesture.started < 300) requestJump();
+		gesture = null;
+	});
+	el.addEventListener("pointercancel", () => { gesture = null; });
+	el.addEventListener("lostpointercapture", () => { gesture = null; });
 }
-
-// --- ON-SCREEN MOBILE BUTTONS ---
 function initMobileButtons() {
-	const leftBtn = document.getElementById("mobile-left");
-	const rightBtn = document.getElementById("mobile-right");
-	const jumpBtn = document.getElementById("mobile-jump");
-
-	if (!leftBtn || !rightBtn || !jumpBtn) return;
-
-	const addMobileEvent = (btn, action) => {
-		btn.addEventListener("touchstart", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			action();
-		}, { passive: false });
-		btn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			action();
-		});
-	};
-
-	addMobileEvent(leftBtn, () => {
-		if (state.isPlaying && state.lane > -1) state.lane--;
-	});
-
-	addMobileEvent(rightBtn, () => {
-		if (state.isPlaying && state.lane < 1) state.lane++;
-	});
-
-	addMobileEvent(jumpBtn, () => {
-		if (state.isPlaying && !state.isJumping) {
-			state.isJumping = true;
-			state.jumpVel = CONFIG.jumpPower;
-			sfxJump();
-		}
-	});
-
-	const mobileControls = document.getElementById("mobile-controls");
-	if (mobileControls && isTouchDevice()) {
-		mobileControls.classList.remove("hidden");
+	for (const [id, action] of [["mobile-left", () => moveLane(-1)], ["mobile-right", () => moveLane(1)], ["mobile-jump", requestJump]]) {
+		const btn = document.getElementById(id);
+		btn.addEventListener("pointerdown", e => { e.preventDefault(); action(); });
+		btn.addEventListener("click", e => { if (e.detail === 0) action(); });
 	}
+	if (isTouchDevice()) document.getElementById("mobile-controls").classList.remove("hidden");
+}
+function togglePause(force) {
+	if (!state.isPlaying) return;
+	paused = typeof force === "boolean" ? force : !paused;
+	gesture = null;
+	jumpBuffer = 0;
+	document.getElementById("pause-screen").classList.toggle("hidden", !paused);
+	document.getElementById("pause-btn").textContent = paused ? "▶" : "Ⅱ";
+	lastTime = performance.now();
+	accumulator = 0;
+	if (paused) stopMusic(); else { startMusic(); ensureLoop(); }
+}
+function initRunSettings() {
+	const sensitivity = document.getElementById("sensitivity");
+	sensitivity.value = String(swipeThreshold);
+	sensitivity.addEventListener("change", () => {
+		swipeThreshold = Number(sensitivity.value);
+		localStorage.setItem("hopper_sensitivity", String(swipeThreshold));
+	});
+	document.getElementById("pause-btn").addEventListener("click", () => togglePause());
+	document.getElementById("resume-btn").addEventListener("click", () => togglePause(false));
+	document.addEventListener("visibilitychange", () => { if (document.hidden) togglePause(true); });
+	window.addEventListener("blur", () => togglePause(true));
+}
+function disposeOwnedObject(object) {
+	const geometries = new Set(), materials = new Set();
+	object.traverse(child => {
+		if (child.geometry) geometries.add(child.geometry);
+		if (child.material) materials.add(child.material);
+	});
+	geometries.forEach(g => { if (!Object.values(getCachedGeos()).includes(g)) g.dispose(); });
+	materials.forEach(m => m.dispose());
 }
 
 function isTouchDevice() {
 	return "ontouchstart" in window || navigator.maxTouchPoints > 0;
 }
 
-let lastTime = 0;
-
-function animate() {
-	if (!state.isPlaying) return;
-
+let lastTime = 0, accumulator = 0, loopActive = false, deathTicks = 0, simulationTime = 0;
+const STEP_MS = 1000 / 60;
+function ensureLoop() {
+	if (loopActive) return;
+	loopActive = true;
 	requestAnimationFrame(animate);
-
-	_frameNow = Date.now();
-
+}
+function animate(now) {
+	accumulator += Math.min(100, Math.max(0, now - lastTime));
+	lastTime = now;
+	while (accumulator >= STEP_MS) {
+		if (state.isPlaying && !paused) updateGame();
+		else if (!state.isPlaying && deathTicks > 0) { updateParticles(); deathTicks--; }
+		accumulator -= STEP_MS;
+	}
+	renderer.render(scene, camera);
+	if ((state.isPlaying && !paused) || deathTicks > 0) requestAnimationFrame(animate);
+	else loopActive = false;
+}
+function updateGame() {
+	simulationTime += STEP_MS;
+	_frameNow = simulationTime;
+	if (jumpBuffer > 0) {
+		jumpBuffer--;
+		if (!state.isJumping) {
+			state.isJumping = true;
+			state.jumpVel = CONFIG.jumpPower;
+			jumpBuffer = 0;
+			sfxJump();
+		}
+	}
 	// Update Score and Speed
 	const scoreAdd = state.has2x ? state.speed * 2 : state.speed;
 	state.score += scoreAdd;
-	state.speed += CONFIG.speedInc;
-	elScore.innerText = Math.floor(state.score);
+	state.speed = Math.min(CONFIG.maxSpeed, state.speed + CONFIG.speedInc);
+	const scoreText = String(Math.floor(state.score));
+	if (elScore.textContent !== scoreText) elScore.textContent = scoreText;
 
 	// Player Movement (Lane Lerp)
 	const targetX = state.lane * CONFIG.laneWidth;
-	state.currentLaneX += (targetX - state.currentLaneX) * 0.15;
+	state.currentLaneX += (targetX - state.currentLaneX) * 0.34;
 	player.position.x = state.currentLaneX;
 
 	// Player Jump Physics
@@ -1662,7 +1679,7 @@ function animate() {
 	player.position.y = state.playerY + 0.5;
 
 	// Player Rotation
-	player.rotation.z = (state.currentLaneX - player.position.x) * -0.1;
+	player.rotation.z = (targetX - state.currentLaneX) * -0.12;
 	player.rotation.x = state.isJumping ? -0.2 : 0;
 
 	// Update power-up timers
@@ -1689,9 +1706,9 @@ function animate() {
 
 	// Spawn World
 	spawnTimer += state.speed;
-	if (spawnTimer > 3) {
+	if (spawnTimer >= 7.5) {
 		spawnRow();
-		spawnTimer = 0;
+		spawnTimer -= 7.5;
 	}
 
 	// Move World Objects
@@ -1722,6 +1739,7 @@ function animate() {
 						state.shieldTimer = 0;
 						if (shieldVisual) {
 							player.remove(shieldVisual);
+							shieldVisual.material.dispose();
 							shieldVisual = null;
 						}
 						sfxShieldBreak();
@@ -1734,6 +1752,7 @@ function animate() {
 						continue;
 					} else {
 						gameOver();
+						return;
 					}
 				}
 			}
@@ -1806,7 +1825,6 @@ function animate() {
 	// Update particles
 	updateParticles();
 
-	renderer.render(scene, camera);
 }
 
 // Start
