@@ -29,7 +29,10 @@ Mobile also has dedicated direction and jump buttons. Swipes trigger while the f
 - Faster lane interpolation, a short jump input buffer, a brisk opening pace, spaced obstacle rows, and a capped maximum speed.
 - Automatic pause when the tab is hidden or the window loses focus. Resume manually to avoid surprise collisions.
 - Reused world geometry, disposal of retired player/floor resources, fewer HUD writes, and a 1.5 pixel-ratio cap with dynamic shadows disabled on touch devices.
-- Bright arcade menus, visible lane boundaries, touch controls, skins, badges, daily streaks and optional online leaderboards.
+- Expressive low-poly animal runners with hoodie details, cross-body bags, sneakers and animated arms/legs. Skin choices retain a consistent bunny, bear or cat silhouette.
+- A pastel city skyline, warm sun, cloud puffs, planter trees, raised verges and moving road dashes. Buildings, windows and clouds use instanced geometry to limit draw calls.
+- Distant fog starts at 32 units instead of 10; menu backdrop blur is reduced to 2px. Nearby characters and hazards stay clear.
+- Bright arcade menus, touch controls, skins, badges, daily streaks and optional online leaderboards.
 
 Scores, purchased skins, coins, achievements, name and settings are stored in the current browser. Scores from before the timing change may have been affected by the device's refresh rate.
 
