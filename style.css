@@ -1168,3 +1168,30 @@ button:disabled { cursor:default; opacity:.55; transform:none; box-shadow:none; 
 .character-card button { width:100%; margin-top:auto; padding:11px 6px; font-size:10px; border-radius:10px; background:var(--lime); }
 .selected-character { font-size:10px; letter-spacing:1px; margin:4px; }
 #shop-btn-go { font:700 11px var(--pixel-font); background:var(--yellow); padding:12px 18px; border-radius:14px; }
+
+/* Progression and skating use the same high-contrast arcade language. */
+.feature-overlay { position:fixed; inset:0; z-index:100; display:flex; justify-content:center; align-items:center; background:rgba(20,20,20,.65); padding:20px; backdrop-filter:blur(2px); }
+.feature-panel { width:min(520px,100%); max-height:88dvh; overflow:auto; border:3px solid var(--ink); border-radius:24px; background:var(--paper); padding:26px; box-shadow:7px 8px 0 var(--ink); text-align:center; }
+.feature-panel h2 { font:700 clamp(27px,6vw,39px) 'Fredoka',sans-serif; margin-bottom:12px; }
+.feature-panel .eyebrow { font-size:9px; letter-spacing:2px; margin-bottom:8px; }
+.feature-note,.shop-note { font-size:11px; line-height:1.6; margin-bottom:16px; }
+.mission-card { text-align:left; padding:15px; border:2px solid; border-radius:14px; background:white; margin:12px 0; }
+.mission-card div { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mission-card h3 { font-size:13px; }.mission-card b { font-size:10px; white-space:nowrap; color:#13852d; }
+.mission-card span { font-size:11px; }.mission-card button { font-size:9px; padding:9px 12px; min-height:36px; background:var(--lime); }
+.mission-card progress { width:100%; height:12px; accent-color:#21c64f; margin:12px 0; }
+#mission-status { font-size:12px; margin:12px 0; min-height:18px; }
+#missions-btn,#missions-btn-go { background:var(--lime); border-radius:14px; font:700 10px var(--pixel-font); padding:12px 14px; }
+.rescue-panel p { font-size:13px; line-height:1.7; margin:14px 0; }
+#rescue-btn { display:block; width:100%; background:var(--lime); font-size:14px; margin:20px 0 14px; }
+#end-run-btn { width:100%; background:var(--yellow); font-size:11px; }
+#board-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:16px 0 24px; }
+.board-art svg { width:100%; height:auto; display:block; }
+#board-grid h3 { font:700 16px 'Fredoka',sans-serif; }#board-grid b { font-size:10px; margin-bottom:10px; }
+.shop-subtitle { text-align:center; margin:30px 0 10px; font:700 25px 'Fredoka',sans-serif; }.shop-note { text-align:center; }
+#board-btn { position:absolute; right:22px; bottom:86px; background:var(--lime); font-size:11px; padding:12px 16px; min-width:110px; z-index:16; }
+#run-district { position:absolute; top:109px; left:20px; background:var(--paper); color:var(--ink); border:2px solid; border-radius:999px; padding:7px 12px; font-size:9px; font-weight:700; letter-spacing:.4px; }
+#danger-display { position:absolute; top:150px; left:20px; background:var(--pink); border:2px solid; border-radius:999px; padding:8px 12px; font-size:10px; font-weight:700; }
+#rescue-countdown { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:700 120px 'Fredoka',sans-serif; color:var(--lime); -webkit-text-stroke:3px var(--ink); background:rgba(20,20,20,.2); z-index:19; }
+#powerup-display { top:192px; }#near-miss-flash { font-size:clamp(20px,5vw,34px); white-space:nowrap; }#milestone-banner { font:700 clamp(22px,5vw,40px) 'Fredoka',sans-serif; max-width:90%; text-align:center; }
+@media(max-width:600px){ #board-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }#board-btn { right:16px; bottom:160px; font-size:10px; min-width:100px; }#missions-btn { font-size:9px; padding:11px 9px; }.feature-panel { padding:22px 16px; }#run-district { top:107px; left:16px; font-size:8px; }#danger-display { top:142px; left:16px; font-size:9px; } }

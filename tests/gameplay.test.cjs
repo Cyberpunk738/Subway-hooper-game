@@ -22,9 +22,11 @@ function game(storage = new Map()) {
   performance:{now:()=>100}, requestAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
  let source = fs.readFileSync(require('node:path').join(__dirname,'../script.js'),'utf8');
+ const progression=fs.readFileSync(require('node:path').join(__dirname,'../progression.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(progression,context);
  const art = fs.readFileSync(require('node:path').join(__dirname,'../game-art.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(art, context);
- source = source.replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
+ source = source.replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
  vm.runInContext(source, context);
  return {run:code=>vm.runInContext(code,context),element,storage};
 }
@@ -109,7 +111,7 @@ test('new character feet collide on the ground and clear one-unit obstacles when
  for (const [height,expectedHits] of [[0,1],[1.5,0]]) {
   const g=game();
   g.run(`
-   let hits=0;
+   let hits=0; state.rescueUsed=true;
    gameOver=()=>{hits++; state.isPlaying=false;};
    state.isPlaying=true; state.isJumping=true; state.playerY=${height};
    player={position:{x:0,y:0,z:0},rotation:{x:0,z:0}};
@@ -259,4 +261,58 @@ test('corrupt ownership data cannot equip unowned or unknown characters',()=>{
  const g=game(new Map([['subway_hopper_character_wallet_v1','{"bank":-10,"owned":["fake"],"selected":"cosmic"}']]));
  assert.equal(g.run('getCoinBank()'),0);assert.equal(g.run('getSelectedSkin()'),'default');
  g.run('saveSelectedSkin("cosmic")');assert.equal(g.run('getSelectedSkin()'),'default');
+});
+
+test('completed missions pay once and persist across reloads',()=>{
+ const storage=new Map(),g=game(storage);
+ g.run('const mission=missionsForDay()[0]; advanceMissions(mission.metric,mission.target);');
+ const reward=g.run('mission.reward');
+ assert.equal(g.run('claimMission(mission.id)'),true);assert.equal(g.run('getCoinBank()'),reward);
+ assert.equal(g.run('claimMission(mission.id)'),false);
+ const reload=game(storage);assert.equal(reload.run('claimMission(missionsForDay()[0].id)'),false);assert.equal(reload.run('getCoinBank()'),reward);
+});
+
+test('incomplete, stale-day and failed mission claims never pay coins',()=>{
+ const g=game();assert.equal(g.run('claimMission(missionsForDay()[0].id)'),false);
+ g.run('const mission=missionsForDay()[0];advanceMissions(mission.metric,mission.target);');
+ assert.equal(g.run('claimMission(mission.id,"2000-01-01")'),false);
+ g.run('localStorage.setItem=()=>{throw new Error("Denied")};');
+ assert.equal(g.run('claimMission(mission.id)'),false);assert.equal(g.run('getCoinBank()'),0);
+});
+
+test('board purchases preserve character ownership, mission progress and remaining coins',()=>{
+ const g=game();g.run('saveCoinBank(500);buyOrEquipCharacter("blue");advanceMissions("coins",7);');
+ assert.equal(g.run('buyOrEquipBoard("neon")'),true);assert.equal(g.run('getCoinBank()'),300);
+ assert.equal(g.run('getSelectedSkin()'),'blue');assert.equal(g.run('readWallet().daily.metrics.coins'),7);
+ assert.equal(g.run('readWallet().board'),'neon');g.run('buyOrEquipBoard("neon")');assert.equal(g.run('getCoinBank()'),300);
+});
+
+test('near miss chains award escalating bonuses and expire in simulation time',()=>{
+ const g=game();g.element('near-miss-flash').style={};
+ g.run('registerNearMiss();registerNearMiss();');assert.equal(g.run('state.score'),75);
+ assert.equal(g.run('state.dangerChain'),2);
+ g.run('for(let i=0;i<300;i++)updateRunFeatures();');assert.equal(g.run('state.dangerChain'),0);
+});
+
+test('rescue charges exactly once, holds the world during countdown and grants protection',()=>{
+ const g=game();g.run('saveCoinBank(50);state.isPlaying=true;requestRescue();');
+ assert.equal(g.run('rescuePending'),true);assert.equal(g.run('paused'),true);
+ assert.equal(g.run('rescueRun()'),true);assert.equal(g.run('getCoinBank()'),20);
+ assert.equal(g.run('rescueRun()'),false);assert.equal(g.run('getCoinBank()'),20);
+ const score=g.run('state.score');g.run('for(let i=0;i<179;i++)updateGame();');
+ assert.equal(g.run('state.score'),score);assert.equal(g.run('state.countdownTicks'),1);
+ g.run('isMuted=true;updateGame();');assert.equal(g.run('state.countdownTicks'),0);
+ assert.equal(g.run('state.invulnerableTicks'),180);
+});
+
+test('insufficient funds or denied storage cannot consume the rescue',()=>{
+ const g=game();g.run('state.isPlaying=true;requestRescue();');
+ assert.equal(g.run('rescueRun()'),false);assert.equal(g.run('state.rescueUsed'),false);
+ g.run('saveCoinBank(50);localStorage.setItem=()=>{throw new Error("Denied")};');
+ assert.equal(g.run('rescueRun()'),false);assert.equal(g.run('state.rescueUsed'),false);assert.equal(g.run('getCoinBank()'),50);
+});
+
+test('a second fatal crash ends the run instead of offering another rescue',()=>{
+ const g=game();g.run('let ends=0;gameOver=()=>ends++;state.isPlaying=true;state.rescueUsed=true;requestRescue();');
+ assert.equal(g.run('ends'),1);assert.equal(g.run('rescuePending'),false);
 });

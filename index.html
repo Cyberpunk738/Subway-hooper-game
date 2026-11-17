@@ -49,6 +49,7 @@
 			<p id="shop-coins">🪙 <span id="shop-coin-count">0</span></p>
 			<p id="shop-status" role="status" aria-live="polite"></p>
 			<div id="skin-grid"></div>
+			<h3 class="shop-subtitle">PICK YOUR DECK</h3><p class="shop-note">Permanent designs. Every run starts with one free ride. Collect pickups for more.</p><div id="board-grid"></div>
 			<button id="close-shop-btn">CLOSE</button>
 		</div>
 	</div>
@@ -60,6 +61,19 @@
 			<div id="badges-grid"></div>
 			<button id="close-badges-btn">CLOSE</button>
 		</div>
+	</div>
+
+	<div id="missions-overlay" class="hidden feature-overlay">
+		<section class="feature-panel" role="dialog" aria-modal="true" aria-labelledby="missions-title">
+			<p class="eyebrow">A LITTLE EXTRA TO CHASE</p><h2 id="missions-title">DAILY MISSIONS</h2><p id="mission-date" class="feature-note"></p>
+			<div id="mission-list"></div><p id="mission-status" role="status" aria-live="polite"></p><button id="close-missions-btn">BACK TO THE RUN</button>
+		</section>
+	</div>
+	<div id="rescue-overlay" class="hidden feature-overlay">
+		<section class="feature-panel rescue-panel" role="dialog" aria-modal="true" aria-labelledby="rescue-title">
+			<p class="eyebrow">ONE MORE CHANCE</p><h2 id="rescue-title">NOT DONE YET?</h2><p>One rescue per run. A 3-second countdown, cleared hazards and 3 seconds of protection.</p>
+			<p id="rescue-balance" role="status"></p><button id="rescue-btn">RESCUE · 30 COINS</button><button id="end-run-btn">FINISH + BANK MY COINS</button>
+		</section>
 	</div>
 
 	<div id="share-overlay" class="hidden">
@@ -81,6 +95,8 @@
 
 	<div id="ui-layer">
 		<header class="arcade-header"><span class="brand">SUPER HOPPER<span class="brand-dot">®</span></span><span class="edition">THE NEVER-STOP ARCADE</span></header>
+		<div id="run-district" class="hidden"></div><div id="danger-display" class="hidden"></div><div id="rescue-countdown" class="hidden" role="status" aria-live="assertive">3</div>
+		<button id="board-btn" class="hidden" aria-label="Activate skateboard">SKATE [1]</button>
 		<button id="pause-btn" class="hidden" aria-label="Pause game">Ⅱ</button>
 		<div id="pause-screen" class="center-screen hidden"><p class="eyebrow">TAKE A BREATHER</p><h1 class="title">ON PAUSE.</h1><p class="subtitle">Your next great run can wait.</p><button id="resume-btn">LET’S GO →</button></div>
 		<!-- HUD: Score -->
@@ -114,7 +130,7 @@
 		<div id="instructions">
 			HOW TO HOP<br />
 			<span class="key">←</span> <span class="key">→</span> SWITCH LANES<br />
-			<span class="key">↑</span> JUMP
+			<span class="key">↑</span> JUMP / TRICK<br /><span class="key">B</span> SKATE
 		</div>
 
 		<div id="start-screen" class="center-screen">
@@ -128,11 +144,12 @@
 			<button id="start-btn">LET’S PLAY →</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn">TOP HOPPERS ↗</button>
-				<button id="shop-btn">CHARACTERS ↗</button>
+				<button id="shop-btn">CHARACTERS + BOARDS ↗</button>
 				<button id="badges-btn">BRAGGING RIGHTS ↗</button>
+				<button id="missions-btn">DAILY MISSIONS ↗</button>
 			</div>
 			<label class="sensitivity-label" for="sensitivity">SWIPE FEEL <select id="sensitivity"><option value="10">SUPER SENSITIVE</option><option value="14" selected>SNAPPY</option><option value="24">STEADY</option></select></label>
-			<div class="play-tips"><span><b>01</b> SWIPE TO DODGE</span><span><b>02</b> TAP TO JUMP</span><span><b>03</b> CHASE YOUR BEST</span></div>
+			<div class="play-tips"><span><b>01</b> SWIPE TO DODGE</span><span><b>02</b> TAP TO JUMP / TRICK</span><span><b>03</b> CHASE YOUR BEST</span></div>
 		</div>
 
 		<div id="game-over-screen" class="center-screen hidden">
@@ -144,7 +161,7 @@
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn-go">TOP HOPPERS ↗</button>
 				<button id="share-btn">📸 SHARE IMAGE</button>
-				<button id="shop-btn-go">CHARACTERS ↗</button>
+				<button id="shop-btn-go">CHARACTERS + BOARDS ↗</button><button id="missions-btn-go">MISSIONS ↗</button>
 				<button id="home-btn">🏠 HOME</button>
 			</div>
 		</div>
