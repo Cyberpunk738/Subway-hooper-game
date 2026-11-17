@@ -1186,6 +1186,7 @@ function enterDistrict(index) {
  state.themeTransition={fromSky:scene.background.clone(),toSky:new THREE.Color(state.theme.sky),progress:0};
  for(let i=floorGroups.length-1;i>=0;i--){const group=floorGroups[i];if(group.userData.districtBackdrop){disposeOwnedObject(group);scene.remove(group);floorGroups.splice(i,1);}}
  floorGroups[0].material.color.set(state.theme.ground);
+ for(const piece of floorGroups)if(piece.userData.edgeRail)piece.material.color.set(index===1?0x45485c:0xffd85c);
  if(index===0)createCityBackdrop();else createDistrictScenery(index);
  advanceMissions('districts');showMilestone(state.theme.name);updateFeatureHUD();
 }
@@ -1199,14 +1200,10 @@ function createDistrictScenery(index) {
   batches.get(key).matrices.push(transform.matrix.clone());
  };
  if(index===1){
-  // Roof and sidewalls enclose the corridor; luminous arches guide the route.
+  // A plain, dark enclosure keeps the approach clear without coloured border lighting.
   add(0,9,-44,12,0.25,112,0x232238);
   for(const side of [-1,1])add(side*5.7,4,-44,0.3,8,112,0x24283f);
-  for(let i=0;i<9;i++){
-   const z=-5-i*12;
-   for(const side of [-1,1])add(side*4.8,3,z,0.14,6,0.18,0x62e9ff,true);
-   add(0,6,z,9.7,0.14,0.18,0xb797ff,true);
-  }
+
  }else if(index===2){
   const towerMaterial=new THREE.MeshStandardMaterial({color:0x526985,roughness:0.9});
   const towers=new THREE.InstancedMesh(geo.unitBox,towerMaterial,24),t=new THREE.Object3D();
@@ -1582,7 +1579,7 @@ function createObstacleMesh(kind = Math.floor(Math.random() * OBSTACLES.length))
 function createDecorationMesh() {
 	if (state.districtIndex === 1) {
 		const pillar = new THREE.Group();
-		const post = new THREE.Mesh(getCachedGeos().unitBox, new THREE.MeshStandardMaterial({ color: 0x62e9ff, emissive: 0x2877a0, emissiveIntensity: 0.7 }));
+		const post = new THREE.Mesh(getCachedGeos().unitBox, new THREE.MeshStandardMaterial({ color: 0x35394b, roughness: 0.9 }));
 		post.position.y = 1.5; post.scale.set(0.25, 3, 0.25); pillar.add(post); return pillar;
 	}
 	const geos = getCachedGeos();
@@ -1877,6 +1874,7 @@ function startGame() {
 		floorGroups.push(verge);
 		const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.13, 200), new THREE.MeshStandardMaterial({ color: 0xffd85c }));
 		rail.position.set(side * 3.85, 0.11, -50);
+		rail.userData.edgeRail = true;
 		scene.add(rail);
 		floorGroups.push(rail);
 	}
