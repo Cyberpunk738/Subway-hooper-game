@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function game(storage = new Map()) {
+function game(storage = new Map(), THREE) {
  const elements = new Map();
  function element(id) {
   if (!elements.has(id)) elements.set(id, {
@@ -16,7 +16,7 @@ function game(storage = new Map()) {
   });
   return elements.get(id);
  }
- const context = vm.createContext({console, Math, Date, Number, String, Set, URL, Blob, File,
+ const context = vm.createContext({THREE,console, Math, Date, Number, String, Set, URL, Blob, File,
   document:{getElementById:element,querySelectorAll(){return [];},body:{classList:{add(){},remove(){}}}},
   window:{location:{href:"https://hopper.example/play/?tracking=1#run"}}, navigator:{maxTouchPoints:0},
   localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},
@@ -401,4 +401,52 @@ test('jetpack cooldown restarts after landing rather than leaving another pickup
  const g=game();simpleRun(g);g.run('state.distance=2400;state.playerY=3.6;endFlight(true);');
  assert.equal(g.run('state.nextJetpackDistance'),3600);
  assert.equal(g.run('jetpackReady(state)'),false);
+});
+
+
+async function districtFixture() {
+ const THREE=await import('../vendor/three.module.min.js');
+ const g=game(new Map(),THREE);
+ g.run(`
+  scene=new THREE.Scene();scene.background=new THREE.Color(DISTRICTS[0].sky);scene.fog=new THREE.Fog(DISTRICTS[0].sky,32,100);
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(10,10),new THREE.MeshStandardMaterial({color:DISTRICTS[0].ground}));
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial({color:0xffd85c}));rail.userData.edgeRail=true;
+  floorGroups=[floor,rail];scene.add(floor,rail);
+  let retired=0;
+  createDistrictScenery=()=>{
+   const group=new THREE.Group();group.userData.districtBackdrop=true;
+   const material=new THREE.MeshStandardMaterial({color:0xabcdef});material.addEventListener('dispose',()=>retired++);
+   group.add(new THREE.Mesh(new THREE.BoxGeometry(1,1,1),material));scene.add(group);floorGroups.push(group);
+  };
+  createCityBackdrop=()=>createDistrictScenery(0);createCityBackdrop();
+  showMilestone=updateFeatureHUD=()=>{};
+ `);
+ return g;
+}
+
+test('districts crossfade scenery, sky, floor and rails instead of popping immediately',async()=>{
+ const g=await districtFixture();g.run('state.distance=400;const originalGround=floorGroups[0].material.color.clone();enterDistrict(1);');
+ assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),2);
+ assert.equal(g.run('floorGroups[0].material.color.equals(originalGround)'),true);
+ assert.equal(g.run('state.themeTransition.incomingMaterials[0].material.opacity'),0);
+ g.run('checkThemeTransition()');
+ const progress=g.run('state.themeTransition.progress');
+ assert.ok(g.run('state.themeTransition.incomingMaterials[0].material.opacity')<progress,'smooth easing should start gently');
+ g.run('for(let i=0;i<44;i++)checkThemeTransition();');
+ assert.ok(Math.abs(g.run('state.themeTransition.incomingMaterials[0].material.opacity')-0.5)<0.0001);
+ assert.equal(g.run('state.themeTransition.incomingMaterials[0].material.depthWrite'),false);
+ g.run('for(let i=0;i<46;i++)checkThemeTransition();');
+ assert.equal(g.run('state.themeTransition'),null);assert.equal(g.run('retired'),1);
+ assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),1);
+ assert.equal(g.run('floorGroups[0].material.color.getHex()'),0x25233b);
+ assert.equal(g.run('floorGroups[1].material.color.getHex()'),0x45485c);
+ assert.equal(g.run('floorGroups[2].children[0].material.transparent'),false);
+ assert.equal(g.run('floorGroups[2].children[0].material.depthWrite'),true);
+});
+
+test('interrupting a district transition disposes retired scenery without accumulating groups',async()=>{
+ const g=await districtFixture();g.run('state.distance=400;enterDistrict(1);checkThemeTransition();state.distance=800;enterDistrict(2);');
+ assert.equal(g.run('retired'),1);assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),2);
+ g.run('for(let i=0;i<91;i++)checkThemeTransition();');
+ assert.equal(g.run('retired'),2);assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),1);
 });
