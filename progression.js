@@ -1,3 +1,8 @@
+export const OUTFITS = [
+ {id:'original',name:'ORIGINAL',cost:0,color:null,trim:null},
+ {id:'varsity',name:'VARSITY',cost:80,color:0xfff4da,trim:0xff628d},
+ {id:'night',name:'NIGHT RUNNER',cost:120,color:0x25263b,trim:0x62ff8a}
+];
 // Local-only progression. Prices, mission targets and district patterns live here.
 export const RESCUE_COST = 30;
 export const BOARDS = [

@@ -7,19 +7,20 @@ function game(storage = new Map()) {
  const elements = new Map();
  function element(id) {
   if (!elements.has(id)) elements.set(id, {
-   value:'', textContent:'', listeners:{},
+   value:'', textContent:'', listeners:{}, attributes:{},scrollTop:0,
+   setAttribute(name,value){this.attributes[name]=value;},querySelectorAll(){return [];},
    focus(){this.focused=true;}, select(){this.selected=true;}, setSelectionRange(a,b){this.selection=[a,b];},
-   classList:{hidden:true,add(name){if(name==="hidden")this.hidden=true;},remove(name){if(name==="hidden")this.hidden=false;},toggle(){},contains(name){return name==="hidden" && this.hidden;}},
+   classList:{hidden:true,add(name){if(name==="hidden")this.hidden=true;},remove(name){if(name==="hidden")this.hidden=false;},toggle(name,force){if(name==="hidden")this.hidden=force===undefined?!this.hidden:force;},contains(name){return name==="hidden" && this.hidden;}},
    addEventListener(type, fn){this.listeners[type]=fn;},
    setPointerCapture(){}, closest(){return null;}
   });
   return elements.get(id);
  }
  const context = vm.createContext({console, Math, Date, Number, String, Set, URL, Blob, File,
-  document:{getElementById:element,body:{classList:{add(){},remove(){}}}},
+  document:{getElementById:element,querySelectorAll(){return [];},body:{classList:{add(){},remove(){}}}},
   window:{location:{href:"https://hopper.example/play/?tracking=1#run"}}, navigator:{maxTouchPoints:0},
   localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},
-  performance:{now:()=>100}, requestAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
+  performance:{now:()=>100}, requestAnimationFrame(){},cancelAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
  let source = fs.readFileSync(require('node:path').join(__dirname,'../script.js'),'utf8');
  const progression=fs.readFileSync(require('node:path').join(__dirname,'../progression.js'),'utf8').replace(/^export /gm,'');
@@ -315,4 +316,75 @@ test('insufficient funds or denied storage cannot consume the rescue',()=>{
 test('a second fatal crash ends the run instead of offering another rescue',()=>{
  const g=game();g.run('let ends=0;gameOver=()=>ends++;state.isPlaying=true;state.rescueUsed=true;requestRescue();');
  assert.equal(g.run('ends'),1);assert.equal(g.run('rescuePending'),false);
+});
+
+test('shop always reopens at characters and the top instead of scrolling to Close',()=>{
+ const g=game();g.element('shop-panel').scrollTop=900;
+ g.run('openShop()');
+ assert.equal(g.element('shop-panel').scrollTop,0);
+ assert.equal(g.element('character-section').classList.contains('hidden'),false);
+ assert.equal(g.element('board-section').classList.contains('hidden'),true);
+ assert.equal(g.element('shop-tab-characters').focused,true);
+ assert.equal(g.element('close-shop-btn').focused,undefined);
+ g.run('showShopTab("boards");closeShop();openShop();');
+ assert.equal(g.element('board-section').classList.contains('hidden'),true);
+ assert.equal(g.element('shop-panel').scrollTop,0);
+});
+
+test('outfits require character ownership and charge once, with persistent selection',()=>{
+ const storage=new Map(),g=game(storage);g.run('saveCoinBank(200);');
+ assert.equal(g.run('buyOrEquipOutfit("blue","varsity")'),false);
+ assert.equal(g.run('buyOrEquipOutfit("default","varsity")'),true);
+ assert.equal(g.run('getCoinBank()'),120);
+ assert.equal(g.run('buyOrEquipOutfit("default","varsity")'),true);assert.equal(g.run('getCoinBank()'),120);
+ const reload=game(storage);assert.equal(reload.run('readWallet().selectedOutfits.default'),'varsity');
+ assert.equal(reload.run('outfitAppearance("default").color'),0xfff4da);
+ assert.equal(reload.run('buyOrEquipOutfit("default","night")'),true);assert.equal(reload.run('getCoinBank()'),0);
+});
+
+test('failed outfit writes cannot debit the wallet or equip unsaved clothing',()=>{
+ const storage=new Map(),g=game(storage);g.run('saveCoinBank(100);localStorage.setItem=()=>{throw new Error("Denied")};');
+ assert.equal(g.run('buyOrEquipOutfit("default","varsity")'),false);
+ const reload=game(storage);assert.equal(reload.run('getCoinBank()'),100);assert.equal(reload.run('readWallet().selectedOutfits.default'),'original');
+});
+
+function simpleRun(g) {
+ g.run(`
+  state.isPlaying=true;
+  player={position:{x:0,y:0,z:0},rotation:{x:0,y:Math.PI,z:0},add(){},remove(){}};
+  scene={remove(){},add(){}};
+  spawnRow=checkThemeTransition=checkMilestones=spawnParticles=spawnDustTrail=sfxCoin=sfxPowerup=sfxJump=showMilestone=()=>{};
+  createSkateboard=()=>({rotation:{set(){}},traverse(){}});
+ `);
+}
+
+test('collecting a skateboard immediately mounts it, without a button or charges',()=>{
+ const g=game();simpleRun(g);
+ g.run('worldObjects=[{type:"board",mesh:{rotation:{y:0},position:{x:0,y:1,z:-0.4},traverse(){}}}];updateGame();');
+ assert.equal(g.run('state.boardTicks'),900);assert.equal(g.run('boardModel!==null'),true);
+ assert.equal(g.run('worldObjects.length'),0);assert.equal(g.run('state.boardCharges'),undefined);
+});
+
+test('jetpack pickup starts flight automatically and removes the skateboard',()=>{
+ const g=game();simpleRun(g);
+ g.run('activateBoard();createJetpack=()=>({position:{set(){}},userData:{flames:[]},traverse(){}});spawnAirCoins=()=>{};worldObjects=[{type:"jetpack",mesh:{rotation:{y:0},position:{x:0,y:1,z:-0.4},traverse(){}}}];updateGame();');
+ assert.equal(g.run('state.flightTicks'),600);assert.equal(g.run('boardModel'),null);
+ assert.equal(g.run('jetpackModel!==null'),true);assert.equal(g.run('worldObjects.length'),0);
+});
+
+test('flight expires into a protected descent; jumping is blocked until landing',()=>{
+ const g=game();simpleRun(g);
+ g.run('state.flightTicks=2;state.playerY=3.6;requestJump();');assert.equal(g.run('jumpBuffer'),0);
+ g.run('updateRunFeatures();');assert.equal(g.run('state.flightTicks'),1);
+ g.run('updateRunFeatures();');assert.equal(g.run('state.flightLanding'),true);assert.equal(g.run('state.invulnerableTicks'),120);
+ g.run('for(let i=0;i<40;i++)updateGame();');
+ assert.equal(g.run('state.playerY')<0.11,true);assert.equal(g.run('state.flightLanding'),false);assert.ok(g.run('state.invulnerableTicks')>0);
+});
+
+test('air coins require flight and ground coins are not collected from the sky',()=>{
+ for(const [flying,air,expected] of [[false,true,0],[true,true,1],[true,false,0]]){
+  const g=game();simpleRun(g);
+  g.run(`state.flightTicks=${flying?100:0};state.playerY=${flying?3.6:0};worldObjects=[{type:'coin',airCoin:${air},mesh:{rotation:{y:0},position:{x:0,y:4.3,z:-0.4,clone(){return this}},traverse(){}}}];updateGame();`);
+  assert.equal(g.run('state.coins'),expected);
+ }
 });

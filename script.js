@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
+import { OUTFITS, BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
 import { CHARACTERS, portraitSVG, renderScoreCard } from "./game-art.js";
 import {
 	initSupabase,
@@ -120,7 +120,9 @@ function readWallet() {
 	return { bank: Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(wallet.bank) || 0))), owned, selected: owned.includes(wallet.selected) ? wallet.selected : "default",
 		boards: [...new Set(["street", ...(Array.isArray(wallet.boards) ? wallet.boards : []).filter(id => BOARDS.some(b => b.id === id))])],
 		board: Array.isArray(wallet.boards) && wallet.boards.includes(wallet.board) && BOARDS.some(b => b.id === wallet.board) ? wallet.board : "street",
-		daily: dailyProgress(wallet.daily) };
+		daily: dailyProgress(wallet.daily),
+  outfits:Object.fromEntries(SKINS.map(c=>[c.id,[...new Set(["original",...(Array.isArray(wallet.outfits?.[c.id])?wallet.outfits[c.id]:[]).filter(id=>OUTFITS.some(o=>o.id===id))])]])),
+  selectedOutfits:Object.fromEntries(SKINS.map(c=>[c.id,Array.isArray(wallet.outfits?.[c.id])&&wallet.outfits[c.id].includes(wallet.selectedOutfits?.[c.id])&&OUTFITS.some(o=>o.id===wallet.selectedOutfits[c.id])?wallet.selectedOutfits[c.id]:"original"])) };
 }
 function writeWallet(wallet) { localStorage.setItem(WALLET_KEY, JSON.stringify(wallet)); }
 function getCoinBank() { return readWallet().bank; }
@@ -694,9 +696,12 @@ function openShop() {
 	document.getElementById("shop-overlay").classList.remove("hidden");
 	document.getElementById("shop-status").textContent = "All characters play equally. Pick your personality.";
 	renderShop();
-	document.getElementById("close-shop-btn").focus();
+	previewCharacterId=getSelectedSkin();
+ showShopTab("characters");
+ document.getElementById("shop-panel").scrollTop=0;
+ document.getElementById("shop-tab-characters").focus({preventScroll:true});
 }
-function closeShop() { document.getElementById("shop-overlay").classList.add("hidden"); shopReturnFocus?.focus(); }
+function closeShop() { stopShowroom(); document.getElementById("shop-overlay").classList.add("hidden"); shopReturnFocus?.focus({preventScroll:true}); }
 function renderShop() {
 	const grid = document.getElementById("skin-grid");
 	const wallet = readWallet();
@@ -707,7 +712,7 @@ function renderShop() {
 		const label = selected ? "✓ EQUIPPED" : owned ? "EQUIP" : missing > 0 ? `NEED ${missing} MORE` : `BUY · ${character.cost} COINS`;
 		const disabled = selected || (!owned && missing > 0);
 		return `<article class="character-card ${selected ? "character-equipped" : ""}">
-			<div class="character-art" style="--character-color:#${character.color.toString(16).padStart(6,"0")}"><img alt="${character.species} character ${character.name}" src="data:image/svg+xml,${encodeURIComponent(portraitSVG(character))}" /></div>
+			<button class="character-art character-preview" data-preview="${character.id}" aria-label="View ${character.name} and outfits" style="--character-color:#${character.color.toString(16).padStart(6,"0")}"><img alt="${character.species} character ${character.name}" src="data:image/svg+xml,${encodeURIComponent(portraitSVG(character,outfitAppearance(character.id)))}" /></button>
 			<div class="character-meta"><h3>${character.name}</h3><span>${character.species.toUpperCase()}</span></div>
 			<p>${character.tagline}</p><div class="character-price">${owned ? "OWNED" : `🪙 ${character.cost} COINS`}</div>
 			<button data-character="${character.id}" ${disabled ? "disabled" : ""}>${label}</button></article>`;
@@ -716,8 +721,10 @@ function renderShop() {
 		const result = buyOrEquipCharacter(button.dataset.character);
 		document.getElementById("shop-status").textContent = result.message;
 		renderShop();
+		selectPreviewCharacter(button.dataset.character);
 		updateBankDisplay();
 	}));
+ grid.querySelectorAll("[data-preview]").forEach(button=>button.addEventListener("click",()=>selectPreviewCharacter(button.dataset.preview)));
 	renderBoardShop();
 	const selected = SKINS.find(c => c.id === wallet.selected);
 	document.getElementById("selected-character-name").textContent = selected.name;
@@ -1061,10 +1068,138 @@ async function handleScoreSubmission(finalScore) {
 	}
 }
 
+// Reusable showroom models and per-character outfits; purchases stay in the wallet.
+function outfitAppearance(characterId, outfitId) {
+ const character=SKINS.find(c=>c.id===characterId)||SKINS[0];
+ const wallet=readWallet(),id=outfitId||wallet.selectedOutfits[character.id];
+ const outfit=OUTFITS.find(o=>o.id===id)||OUTFITS[0];
+ return {...outfit,color:outfit.color??character.color,trim:outfit.trim??character.accent};
+}
+function buyOrEquipOutfit(characterId,outfitId) {
+ const wallet=readWallet(),outfit=OUTFITS.find(o=>o.id===outfitId);
+ if(!wallet.owned.includes(characterId)||!outfit)return false;
+ const owned=wallet.outfits[characterId];
+ if(!owned.includes(outfitId)){if(wallet.bank<outfit.cost)return false;wallet.bank-=outfit.cost;owned.push(outfitId);}
+ wallet.selectedOutfits[characterId]=outfitId;wallet.selected=characterId;
+ try{writeWallet(wallet);return true;}catch{return false;}
+}
+let previewCharacterId=null,showroom=null,previewDrag=null;
+function showShopTab(tab) {
+ const characters=tab!=='boards';
+ document.getElementById('character-section').classList.toggle('hidden',!characters);
+ document.getElementById('board-section').classList.toggle('hidden',characters);
+ document.getElementById('shop-tab-characters').setAttribute('aria-selected',String(characters));
+ document.getElementById('shop-tab-boards').setAttribute('aria-selected',String(!characters));
+ document.getElementById('shop-panel').scrollTop=0;
+ if(characters)selectPreviewCharacter(previewCharacterId||getSelectedSkin());else stopShowroom();
+}
+function selectPreviewCharacter(id) {
+ const character=SKINS.find(c=>c.id===id);if(!character)return;
+ previewCharacterId=id;
+ const wallet=readWallet(),ownsCharacter=wallet.owned.includes(id);
+ document.getElementById('preview-name').textContent=character.name;
+ document.getElementById('preview-description').textContent=`${character.species.toUpperCase()} · ${character.tagline}`;
+ document.getElementById('preview-fallback').src=`data:image/svg+xml,${encodeURIComponent(portraitSVG(character,outfitAppearance(id)))}`;
+ document.getElementById('outfit-list').innerHTML=OUTFITS.map(outfit=>{
+  const owned=wallet.outfits[id].includes(outfit.id),selected=wallet.selectedOutfits[id]===outfit.id;
+  const disabled=!ownsCharacter||selected||(!owned&&wallet.bank<outfit.cost);
+  return `<button data-outfit="${outfit.id}" ${disabled?'disabled':''}>${outfit.name}<small>${!ownsCharacter?'BUY CHARACTER FIRST':selected?'EQUIPPED':owned?'EQUIP':`${outfit.cost} COINS`}</small></button>`;
+ }).join('');
+ document.querySelectorAll('[data-outfit]').forEach(button=>button.addEventListener('click',()=>{
+  const result=buyOrEquipOutfit(id,button.dataset.outfit);
+  document.getElementById('shop-status').textContent=result?'Outfit equipped. Your next run and score card will use it.':'Purchase unavailable. No coins were spent.';
+  renderShop();selectPreviewCharacter(id);updateBankDisplay();
+ }));
+ startShowroom(id);
+}
+function stopShowroom() {
+ if(showroom){disposeOwnedObject(showroom.model);showroom.renderer.dispose();showroom.renderer.forceContextLoss();showroom.renderer.domElement.remove();showroom=null;}
+ previewDrag=null;
+}
+function startShowroom(id) {
+ stopShowroom();
+ const host=document.getElementById('character-showroom'),fallback=document.getElementById('preview-fallback');
+ fallback.classList.remove('hidden');
+ document.getElementById('preview-note').textContent='Drag the 3D character to inspect the clothes.';
+ for(const id of ['preview-front','preview-side','preview-back'])document.getElementById(id).disabled=false;
+ let renderer,model;
+ try {
+  renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:'low-power'});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
+  renderer.setSize(host.clientWidth||320,host.clientHeight||280);
+  const previewScene=new THREE.Scene();
+  previewScene.add(new THREE.HemisphereLight(0xffffff,0x686185,2));
+  const light=new THREE.DirectionalLight(0xffffff,2);light.position.set(3,5,5);previewScene.add(light);
+  model=createPlayer(id,true);model.position.y=-0.7;previewScene.add(model);
+  const view=new THREE.PerspectiveCamera(35,(host.clientWidth||320)/(host.clientHeight||280),0.1,20);view.position.set(0,0.5,3.5);view.lookAt(0,0.15,0);
+  host.appendChild(renderer.domElement);fallback.classList.add('hidden');
+  showroom={renderer,model,scene:previewScene,camera:view};
+  renderer.domElement.setAttribute('aria-label','3D character and outfit preview. Drag to rotate.');
+  renderer.domElement.addEventListener('pointerdown',event=>{previewDrag={id:event.pointerId,x:event.clientX};renderer.domElement.setPointerCapture(event.pointerId);});
+  renderer.domElement.addEventListener('pointermove',event=>{if(previewDrag?.id!==event.pointerId)return;model.rotation.y+=(event.clientX-previewDrag.x)*0.015;previewDrag.x=event.clientX;renderer.render(previewScene,view);});
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])renderer.domElement.addEventListener(event,()=>{previewDrag=null;});
+  renderer.render(previewScene,view);
+ }catch{
+  if(model)disposeOwnedObject(model);
+  if(renderer){renderer.dispose();renderer.domElement?.remove();}
+  showroom=null;fallback.classList.remove('hidden');
+  document.getElementById('preview-note').textContent='3D preview unavailable in this browser. Outfit illustration shown.';
+  for(const id of ['preview-front','preview-side','preview-back'])document.getElementById(id).disabled=true;
+ }
+}
+function initWardrobe() {
+ document.getElementById('shop-tab-characters').addEventListener('click',()=>showShopTab('characters'));
+ document.getElementById('shop-tab-boards').addEventListener('click',()=>showShopTab('boards'));
+ for(const [id,angle] of [['preview-front',0],['preview-side',Math.PI/2],['preview-back',Math.PI]])document.getElementById(id).addEventListener('click',()=>{if(showroom){showroom.model.rotation.y=angle;showroom.renderer.render(showroom.scene,showroom.camera);}});
+ window.addEventListener('resize',()=>{if(!showroom)return;const host=document.getElementById('character-showroom'),width=host.clientWidth||320,height=host.clientHeight||280;showroom.renderer.setSize(width,height);showroom.camera.aspect=width/height;showroom.camera.updateProjectionMatrix();showroom.renderer.render(showroom.scene,showroom.camera);});
+}
+function addPickupRing(group,color) {
+ const ring=new THREE.Mesh(getCachedGeos().powerupRing,new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.8}));
+ ring.scale.setScalar(1.4);group.add(ring);
+}
+let jetpackModel=null;
+function createJetpack() {
+ const group=new THREE.Group(),geo=getCachedGeos();
+ const shell=new THREE.MeshStandardMaterial({color:0xff754b,metalness:0.3,roughness:0.5});
+ const steel=new THREE.MeshStandardMaterial({color:0xcbd8e9,metalness:0.6,roughness:0.4});
+ const flameMaterial=new THREE.MeshBasicMaterial({color:0xffd85c});
+ const flames=[];
+ for(const x of [-0.21,0.21]){
+  const tank=new THREE.Mesh(geo.obstacleCylinder,shell);tank.scale.set(0.3,0.65,0.3);tank.position.set(x,0.18,0);group.add(tank);
+  const nozzle=new THREE.Mesh(geo.obstacleCylinder,steel);nozzle.scale.set(0.22,0.12,0.22);nozzle.position.set(x,-0.18,0);group.add(nozzle);
+  const flame=new THREE.Mesh(geo.obstacleCone,flameMaterial);flame.scale.set(0.16,0.32,0.16);flame.rotation.z=Math.PI;flame.position.set(x,-0.35,0);group.add(flame);flames.push(flame);
+ }
+ const bridge=new THREE.Mesh(geo.unitBox,steel);bridge.scale.set(0.4,0.25,0.16);bridge.position.y=0.25;group.add(bridge);
+ group.userData.flames=flames;return group;
+}
+function spawnAirCoins(zStart=-45) {
+ const lane=[0,-1,0,1][state.flightPath++%4];
+ for(let i=0;i<3;i++){
+  const coin=createCoinMesh();coin.position.set(lane*CONFIG.laneWidth,4.3,zStart-i*3);
+  scene.add(coin);worldObjects.push({mesh:coin,type:'coin',airCoin:true});
+ }
+}
+function activateFlight() {
+ if(!state.isPlaying||paused||rescuePending||state.countdownTicks)return false;
+ endBoard(false);state.flightTicks=10*60;state.flightLanding=false;state.isJumping=false;state.jumpVel=0;jumpBuffer=0;
+ if(jetpackModel){player.remove(jetpackModel);disposeMeshMaterials(jetpackModel);}
+ jetpackModel=createJetpack();jetpackModel.position.set(0,0.55,-0.38);player.add(jetpackModel);
+ for(let z=-8;z>=-32;z-=6)spawnAirCoins(z);
+ showMilestone('JETPACK · FOLLOW THE COINS');updateFeatureHUD();return true;
+}
+function endFlight(safeLanding=true) {
+ if(jetpackModel){player?.remove(jetpackModel);disposeMeshMaterials(jetpackModel);jetpackModel=null;}
+ state.flightTicks=0;state.flightLanding=safeLanding&&state.playerY>0;
+ if(safeLanding){state.invulnerableTicks=Math.max(state.invulnerableTicks,120);state.isJumping=false;state.jumpVel=0;jumpBuffer=0;}
+ for(let i=worldObjects.length-1;i>=0;i--){const obj=worldObjects[i];if(obj.airCoin||safeLanding&&obj.type==='obstacle'&&obj.mesh.position.z>-8){disposeMeshMaterials(obj.mesh);scene.remove(obj.mesh);worldObjects.splice(i,1);}}
+ updateFeatureHUD();
+}
+
 // --- MISSIONS, SKATING, DISTRICTS AND RESCUE ---
 function freshRunFeatures() {
  return {distance:0,pendingDistance:0,districtIndex:0,safeLane:0,runTicks:0,
-  dangerChain:0,dangerTimer:0,boardCharges:1,boardTicks:0,boardSpawnRows:8,
+  dangerChain:0,dangerTimer:0,boardTicks:0,boardSpawnRows:11,
+ flightTicks:0,flightLanding:false,flightSpawnRows:10,flightPath:0,
   jumpTicks:0,tricks:0,rescueUsed:false,countdownTicks:0,invulnerableTicks:0};
 }
 function advanceMissions(metric, amount=1) {
@@ -1131,10 +1266,10 @@ function createSkateboard() {
  return group;
 }
 function activateBoard() {
- if(!state.isPlaying||paused||rescuePending||state.countdownTicks||state.boardTicks>0||state.boardCharges<1)return false;
- state.boardCharges--;state.boardTicks=15*60;
- boardModel=createSkateboard();player.add(boardModel);
- advanceMissions('boards');showMilestone('SKATE ON · 15 SECONDS');updateFeatureHUD();return true;
+ if(!state.isPlaying||paused||rescuePending||state.countdownTicks||state.flightTicks||state.flightLanding)return false;
+ state.boardTicks=15*60;
+ if(!boardModel){boardModel=createSkateboard();player.add(boardModel);advanceMissions('boards');}
+ showMilestone('SKATE ON · 15 SECONDS');updateFeatureHUD();return true;
 }
 function endBoard(broken=false) {
  if(boardModel){player?.remove(boardModel);disposeMeshMaterials(boardModel);boardModel=null;}
@@ -1159,9 +1294,8 @@ function registerNearMiss() {
 }
 function updateFeatureHUD() {
  const board=document.getElementById('board-btn');
- const label=state.boardTicks>0?`SKATING · ${Math.ceil(state.boardTicks/60)}s`:`SKATE [${state.boardCharges}]`;
+ const label=state.flightTicks>0?`JETPACK · ${Math.ceil(state.flightTicks/60)}s`:state.flightLanding?'LANDING…':state.boardTicks>0?`SKATING · ${Math.ceil(state.boardTicks/60)}s`:'COLLECT A BOARD OR JETPACK';
  if(board.textContent!==label)board.textContent=label;
- board.disabled=state.boardTicks>0||state.boardCharges<1||!!state.countdownTicks;
  const district=document.getElementById('run-district');
  district.textContent=`${DISTRICTS[state.districtIndex].name} · ${Math.floor(state.distance)}m`;
  const danger=document.getElementById('danger-display');
@@ -1173,6 +1307,8 @@ function updateRunFeatures() {
  if(state.invulnerableTicks>0)state.invulnerableTicks--;
  if(state.dangerTimer>0&&--state.dangerTimer===0){state.dangerChain=0;updateFeatureHUD();}
  if(state.boardTicks>0&&--state.boardTicks===0)endBoard();
+ if(state.flightTicks>0&&--state.flightTicks===0)endFlight(true);
+ if(jetpackModel)jetpackModel.userData.flames.forEach((flame,i)=>flame.scale.y=0.25+Math.abs(Math.sin(state.runTicks*0.7+i))*0.18);
  if(boardModel&&state.isJumping){
   const phase=Math.min(1,state.jumpTicks/42),turn=phase*Math.PI*2;
   boardModel.rotation.set(0,state.tricks%3===1?turn:0,state.tricks%3===1?0:(state.tricks%3===2?-turn:turn));
@@ -1265,7 +1401,6 @@ function initRunnerFeatures() {
   if(e.key==='Escape'){e.preventDefault();closeMissions();}
   if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll('button:not(:disabled)')],first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
  });
- document.getElementById('board-btn').addEventListener('click',activateBoard);
  document.getElementById('rescue-btn').addEventListener('click',rescueRun);
  document.getElementById('end-run-btn').addEventListener('click',()=>{if(rescuePending)gameOver();});
  document.getElementById('rescue-overlay').addEventListener('keydown',e=>{
@@ -1333,6 +1468,7 @@ function init() {
 
 	initRunSettings();
 	initRunnerFeatures();
+ initWardrobe();
 	// UI Handlers
 	document.getElementById("start-btn").addEventListener("click", startGame);
 	document.getElementById("restart-btn").addEventListener("click", startGame);
@@ -1421,15 +1557,17 @@ function randomTheme() {
 }
 
 // Art is built from cached low-poly primitives; each skin keeps a stable silhouette.
-function createPlayer() {
-	if (player) { disposeOwnedObject(player); scene.remove(player); }
+function createPlayer(characterId=getSelectedSkin(),preview=false) {
+	if (!preview && player) { disposeOwnedObject(player); scene.remove(player); }
 	const group = new THREE.Group();
-	const skin = SKINS.find(s => s.id === getSelectedSkin()) || SKINS[0];
+	const skin = SKINS.find(s => s.id === characterId) || SKINS[0];
 	const geo = getCachedGeos();
-	const coat = new THREE.MeshStandardMaterial({ color: skin.color, roughness: 0.65, flatShading: true });
+	const appearance=outfitAppearance(skin.id);
+ const fur=new THREE.MeshStandardMaterial({color:skin.color,roughness:0.65,flatShading:true});
+ const coat = new THREE.MeshStandardMaterial({ color: appearance.color, roughness: 0.65, flatShading: true });
 	const ink = new THREE.MeshStandardMaterial({ color: 0x202437, roughness: 0.8 });
 	const cream = new THREE.MeshStandardMaterial({ color: 0xfff8e8, roughness: 0.8 });
-	const accent = new THREE.MeshStandardMaterial({ color: skin.accent, roughness: 0.65 });
+	const accent = new THREE.MeshStandardMaterial({ color: appearance.trim, roughness: 0.65 });
 	const eye = new THREE.MeshBasicMaterial({ color: 0x141827 });
 	function part(geometry, material, x, y, z, sx = 1, sy = 1, sz = 1, parent = group) {
 		const mesh = new THREE.Mesh(geometry, material);
@@ -1442,7 +1580,7 @@ function createPlayer() {
 	// Shared rig and collision dimensions; species change the model, not the abilities.
 	part(geo.characterBody, coat, 0, 0.48, 0, 1, 1, 0.85);
 	if (skin.species === "robot") {
-		part(geo.unitBox, coat, 0, 1.03, 0.03, 0.8, 0.64, 0.64);
+		part(geo.unitBox, fur, 0, 1.03, 0.03, 0.8, 0.64, 0.64);
 		part(geo.unitBox, ink, 0, 1.04, 0.365, 0.65, 0.24, 0.035);
 		for (const side of [-1, 1]) part(geo.unitBox, cream, side * 0.17, 1.05, 0.39, 0.13, 0.08, 0.025);
 		part(geo.unitBox, ink, 0, 1.43, 0.03, 0.04, 0.2, 0.04);
@@ -1454,11 +1592,11 @@ function createPlayer() {
 		for (const side of [-1,1]) part(geo.rounded, coat, side * 0.46, 1.03, 0.03, 0.09, 0.14, 0.14);
 		part(geo.unitBox, cream, 0, 0.56, -0.29, 0.44, 0.45, 0.23);
 	} else {
-		part(geo.rounded, coat, 0, 0.99, 0.03, 0.43, 0.38, 0.35);
+		part(geo.rounded, fur, 0, 0.99, 0.03, 0.43, 0.38, 0.35);
 		part(geo.rounded, cream, 0, 0.89, 0.3, 0.27, 0.16, 0.09);
 		for (const side of [-1, 1]) {
 			const pointed = ["fox", "cat"].includes(skin.species);
-			const ear = part(pointed ? geo.obstacleCone : geo.rounded, coat, side * 0.26, 1.39, 0.01, pointed ? 0.38 : 0.115, pointed ? 0.4 : skin.species === "bear" ? 0.14 : 0.29, pointed ? 0.3 : 0.1);
+			const ear = part(pointed ? geo.obstacleCone : geo.rounded, fur, side * 0.26, 1.39, 0.01, pointed ? 0.38 : 0.115, pointed ? 0.4 : skin.species === "bear" ? 0.14 : 0.29, pointed ? 0.3 : 0.1);
 			ear.rotation.z = side * -0.2;
 			part(geo.rounded, accent, side * 0.26, 1.4, 0.095, 0.055, pointed ? 0.1 : skin.species === "bear" ? 0.07 : 0.19, 0.025);
 			part(geo.rounded, eye, side * 0.17, 1.035, 0.342, 0.052, 0.077, 0.025);
@@ -1466,7 +1604,7 @@ function createPlayer() {
 		}
 		part(geo.rounded, eye, 0, 0.93, 0.4, 0.05, 0.035, 0.025);
 		if (["fox", "cat"].includes(skin.species)) {
-			const tail = part(geo.rounded, coat, 0, 0.43, -0.38, skin.species === "fox" ? 0.18 : 0.07, 0.12, 0.32);
+			const tail = part(geo.rounded, fur, 0, 0.43, -0.38, skin.species === "fox" ? 0.18 : 0.07, 0.12, 0.32);
 			tail.rotation.x = -0.45;
 			if (skin.species === "fox") part(geo.rounded, cream, 0, 0.56, -0.64, 0.14, 0.1, 0.12);
 		}
@@ -1477,12 +1615,16 @@ function createPlayer() {
 	const strap = part(geo.unitBox, ink, 0, 0.49, 0.28, 0.09, 0.5, 0.035);
 	strap.rotation.z = -0.55;
 	part(geo.rounded, accent, 0.2, 0.37, 0.28, 0.16, 0.12, 0.08);
-	const limbs = [];
+ if(appearance.id!=="original"){
+  for(const side of [-1,1])for(const z of [-0.272,0.272])part(geo.unitBox,accent,side*0.2,0.5,z,0.06,0.31,0.025);
+  part(geo.unitBox,accent,0,0.27,0,0.61,0.06,0.49);
+ }
+ const limbs = [];
 	for (const side of [-1, 1]) {
 		const arm = new THREE.Group();
 		arm.position.set(side * 0.35, 0.65, 0);
 		group.add(arm);
-		part(geo.rounded, coat, side * 0.045, -0.14, 0, 0.1, 0.22, 0.11, arm);
+		part(geo.rounded, appearance.id==="varsity"?cream:coat, side * 0.045, -0.14, 0, 0.1, 0.22, 0.11, arm);
 		part(geo.rounded, cream, side * 0.045, -0.3, 0.01, 0.09, 0.085, 0.09, arm);
 		const leg = new THREE.Group();
 		leg.position.set(side * 0.18, 0.26, 0);
@@ -1494,9 +1636,10 @@ function createPlayer() {
 	}
 	group.userData.limbs = limbs;
 	group.userData.characterId = skin.id;
+ group.userData.outfit=appearance;
 	// The track extends along negative Z; the camera follows from positive Z.
-	group.rotation.y = Math.PI;
-	scene.add(group);
+	group.rotation.y = preview?0:Math.PI;
+ if(!preview)scene.add(group);
 	return group;
 }
 
@@ -1518,9 +1661,9 @@ function animateCharacter() {
 	player.scale.set(1 + wave * 0.08, 1 - wave * 0.04, 1 + wave * 0.08);
 	player.rotation.z += wave * pose.tilt;
 	for (const { arm, leg, side } of player.userData.limbs) {
-		arm.rotation.x = state.boardTicks > 0 ? -0.45 : state.isJumping ? pose.arms : stride * side - wave;
+		arm.rotation.x = state.flightTicks||state.flightLanding?-0.4:state.boardTicks > 0 ? -0.45 : state.isJumping ? pose.arms : stride * side - wave;
 		arm.rotation.z = side * (state.isJumping ? -0.35 : -0.08 - wave * 0.2);
-		leg.rotation.x = state.boardTicks > 0 ? side * 0.35 : state.isJumping ? pose.knees : -stride * side;
+		leg.rotation.x = state.flightTicks||state.flightLanding?side*0.1:state.boardTicks > 0 ? side * 0.35 : state.isJumping ? pose.knees : -stride * side;
 	}
 }
 
@@ -1756,11 +1899,16 @@ function spawnRow(zStart = -60) {
 	if (state.boardSpawnRows >= 12) {
 		state.boardSpawnRows = 0;
 		const board = createSkateboard();
+ addPickupRing(board,0x21f14f);
 		board.position.set(([-1,0,1].find(lane => !blocked.includes(lane))) * CONFIG.laneWidth, 1.1, zStart);
 		board.rotation.z = 0.35;
 		scene.add(board);
 		worldObjects.push({ mesh: board, type: "board" });
 	}
+ state.flightSpawnRows++;
+ if(state.flightSpawnRows>=24){state.flightSpawnRows=0;const pickup=createJetpack();addPickupRing(pickup,0xff9843);pickup.position.set(([-1,0,1].find(l=>!blocked.includes(l)))*CONFIG.laneWidth,1.1,zStart-4);scene.add(pickup);worldObjects.push({mesh:pickup,type:"jetpack"});}
+ if(state.flightTicks>100)spawnAirCoins(zStart);
+
 }
 
 function startGame() {
@@ -1931,6 +2079,7 @@ function gameOver() {
 	document.getElementById("danger-display").classList.add("hidden");
 	state.dangerChain = 0; state.dangerTimer = 0;
 	endBoard(false);
+ endFlight(false);
 	celebrationTicks = 90;
 	state.isPlaying = false;
 	deathTicks = 90;
@@ -1953,7 +2102,7 @@ function gameOver() {
 	if (uiCombo) uiCombo.classList.add("hidden");
 
 	const finalScore = Math.floor(state.score);
-	lastRun = { score: finalScore, coins: state.coins, characterId: player?.userData.characterId || getSelectedSkin(), name: currentUsername || "A player", url: scoreShareData().url };
+	lastRun = { score: finalScore, coins: state.coins, characterId: player?.userData.characterId || getSelectedSkin(), outfit:player?.userData.outfit, name: currentUsername || "A player", url: scoreShareData().url };
 	elScoreFinal.innerText = finalScore;
 	elFinalCoins.innerText = state.coins;
 
@@ -1989,7 +2138,7 @@ function moveLane(direction) {
 	if (state.isPlaying && !paused && !state.countdownTicks) state.lane = Math.max(-1, Math.min(1, state.lane + direction));
 }
 function requestJump() {
-	if (state.isPlaying && !paused && !state.countdownTicks) jumpBuffer = 8;
+	if (state.isPlaying && !paused && !state.countdownTicks && !state.flightTicks && !state.flightLanding) jumpBuffer = 8;
 }
 function overlayOpen() {
 	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay"), document.getElementById("share-overlay"), document.getElementById("missions-overlay"), document.getElementById("rescue-overlay")]
@@ -1998,7 +2147,7 @@ function overlayOpen() {
 function handleInput(e) {
 	if (e.target.closest("input, select, textarea") || overlayOpen()) return;
 	if (e.target.closest("button") && ["Space", "Enter"].includes(e.code)) return;
-	if (!["ArrowLeft", "ArrowRight", "ArrowUp", "Space", "Enter", "Escape", "KeyP", "KeyA", "KeyD", "KeyW", "KeyB"].includes(e.code)) return;
+	if (!["ArrowLeft", "ArrowRight", "ArrowUp", "Space", "Enter", "Escape", "KeyP", "KeyA", "KeyD", "KeyW"].includes(e.code)) return;
 	e.preventDefault();
 	if (e.repeat) return;
 	if (e.code === "Escape" || e.code === "KeyP") { togglePause(); return; }
@@ -2007,7 +2156,6 @@ function handleInput(e) {
 		return;
 	}
 	if (paused) return;
-	if (e.code === "KeyB") { activateBoard(); return; }
 	if (["ArrowLeft", "KeyA"].includes(e.code)) moveLane(-1);
 	else if (["ArrowRight", "KeyD"].includes(e.code)) moveLane(1);
 	else requestJump();
@@ -2138,8 +2286,10 @@ function updateGame() {
 	state.currentLaneX += (targetX - state.currentLaneX) * 0.34;
 	player.position.x = state.currentLaneX;
 
-	// Player Jump Physics
-	if (state.isJumping) {
+ // Smooth automatic flight and protected descent.
+ if(state.flightTicks>0){state.playerY+=(3.6-state.playerY)*0.08;}
+ else if(state.flightLanding){state.playerY=Math.max(0,state.playerY-0.1);if(!state.playerY)state.flightLanding=false;}
+ else if (state.isJumping) {
 		state.jumpTicks++;
 		state.playerY += state.jumpVel;
 		state.jumpVel -= CONFIG.gravity;
@@ -2152,6 +2302,7 @@ function updateGame() {
 		state.playerY = Math.abs(Math.sin(_frameNow * 0.015)) * 0.1;
 	}
 	player.position.y = state.playerY + (state.boardTicks > 0 ? 0.18 : 0.05);
+ if(camera){camera.position.y+=(CONFIG.cameraOffset.y+Math.min(3.6,state.playerY)*(state.flightTicks||state.flightLanding?0.25:0)-camera.position.y)*0.08;camera.lookAt(0,state.flightTicks||state.flightLanding?state.playerY*0.65:0,-5);}
 
 	// Player Rotation
 	player.rotation.z = (targetX - state.currentLaneX) * -0.12;
@@ -2200,7 +2351,7 @@ function updateGame() {
 		// Spin coins & powerups
 		if (obj.type === "coin") {
 			obj.mesh.rotation.y += 0.06;
-			obj.mesh.position.y = 1.0 + Math.sin(_frameNow * 0.005 + obj.mesh.position.x) * 0.15;
+			obj.mesh.position.y = (obj.airCoin?4.3:1.0) + Math.sin(_frameNow * 0.005 + obj.mesh.position.x) * 0.15;
 		}
 		if (obj.type === "powerup") {
 			obj.mesh.rotation.y += 0.04;
@@ -2215,7 +2366,7 @@ function updateGame() {
 				// Match clearance to the new runner’s feet, rather than its visual origin.
 				const feetClearObstacle = state.playerY + 0.05 >= hitbox.height;
 
-				if (dx < hitbox.halfWidth && !feetClearObstacle) {
+				if (dx < hitbox.halfWidth && !feetClearObstacle && !state.flightTicks && !state.flightLanding) {
 					if (state.invulnerableTicks > 0 || state.boardTicks > 0) {
 						if (state.boardTicks > 0 && state.invulnerableTicks <= 0) { endBoard(true); state.invulnerableTicks = 75; }
 						disposeMeshMaterials(obj.mesh); scene.remove(obj.mesh); worldObjects.splice(i, 1); continue;
@@ -2262,7 +2413,7 @@ function updateGame() {
 		if (obj.type === "coin") {
 			if (obj.mesh.position.z > -1.0 && obj.mesh.position.z < 1.0) {
 				const dx = Math.abs(player.position.x - obj.mesh.position.x);
-				if (dx < 1.0) {
+				if (dx < 1.0 && (!obj.airCoin ? !state.flightTicks && !state.flightLanding : state.flightTicks>0 && Math.abs(obj.mesh.position.y-(state.playerY+0.8))<1)) {
 					// Collect!
 					const comboMult = getComboMultiplier();
 					const coinValue = 10 * comboMult * (state.has2x ? 2 : 1);
@@ -2291,13 +2442,17 @@ function updateGame() {
 
 		if (obj.type === "board") {
 			obj.mesh.rotation.y += 0.025;
-			if (Math.abs(obj.mesh.position.z) < 1 && Math.abs(player.position.x - obj.mesh.position.x) < 1) {
-				state.boardCharges = Math.min(2, state.boardCharges + 1);
-				showMilestone("BOARD READY · B / SKATE");
+			if (Math.abs(obj.mesh.position.z) < 1 && Math.abs(player.position.x - obj.mesh.position.x) < 1 && state.playerY < 1.3 && !state.flightTicks && !state.flightLanding) {
+				activateBoard();
 				disposeMeshMaterials(obj.mesh); scene.remove(obj.mesh); worldObjects.splice(i, 1);
 				updateFeatureHUD(); continue;
 			}
 		}
+
+  if(obj.type==="jetpack"){
+   obj.mesh.rotation.y+=0.025;
+   if(Math.abs(obj.mesh.position.z)<1&&Math.abs(player.position.x-obj.mesh.position.x)<1&&state.playerY<1.3&&!state.flightTicks&&!state.flightLanding){activateFlight();disposeMeshMaterials(obj.mesh);scene.remove(obj.mesh);worldObjects.splice(i,1);continue;}
+  }
 
 		// Power-up Collection
 		if (obj.type === "powerup") {
