@@ -26,3 +26,11 @@ test('districts have distinct layouts and board designs have one free starter',(
  assert.equal(BOARDS.filter(b=>b.cost===0).length,1);
  assert.equal(new Set(BOARDS.map(b=>b.id)).size,3);
 });
+
+test('jetpack eligibility enforces distance, flight/landing exclusion and one queued pickup',async()=>{
+ const {JETPACK_SPACING,jetpackReady}=await import('../progression.js');
+ const run={distance:1199,nextJetpackDistance:JETPACK_SPACING,flightTicks:0,flightLanding:false};
+ assert.equal(jetpackReady(run),false);run.distance=1200;assert.equal(jetpackReady(run),true);
+ assert.equal(jetpackReady(run,true),false);run.flightTicks=1;assert.equal(jetpackReady(run),false);
+ run.flightTicks=0;run.flightLanding=true;assert.equal(jetpackReady(run),false);
+});

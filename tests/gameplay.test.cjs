@@ -388,3 +388,17 @@ test('air coins require flight and ground coins are not collected from the sky',
   assert.equal(g.run('state.coins'),expected);
  }
 });
+
+test('offline runs retain device-best scores across reloads without network calls',async()=>{
+ const storage=new Map(),g=game(storage);
+ g.run('currentUsername="Afeez";navigator.onLine=false;');
+ await g.run('handleScoreSubmission(1250)');assert.equal(g.element('best-score').textContent,'1,250');assert.equal(g.element('best-scope').textContent,'DEVICE BEST');
+ const reload=game(storage);reload.run('currentUsername="Afeez";navigator.onLine=false;');await reload.run('handleScoreSubmission(100)');
+ assert.equal(reload.element('best-score').textContent,'1,250');
+});
+
+test('jetpack cooldown restarts after landing rather than leaving another pickup waiting',()=>{
+ const g=game();simpleRun(g);g.run('state.distance=2400;state.playerY=3.6;endFlight(true);');
+ assert.equal(g.run('state.nextJetpackDistance'),3600);
+ assert.equal(g.run('jetpackReady(state)'),false);
+});

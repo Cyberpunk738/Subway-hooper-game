@@ -1,3 +1,7 @@
+export const JETPACK_SPACING = 1200;
+export function jetpackReady(run, hasQueuedPickup=false) {
+ return !hasQueuedPickup && !run.flightTicks && !run.flightLanding && run.distance >= run.nextJetpackDistance;
+}
 export const OUTFITS = [
  {id:'original',name:'ORIGINAL',cost:0,color:null,trim:null},
  {id:'varsity',name:'VARSITY',cost:80,color:0xfff4da,trim:0xff628d},

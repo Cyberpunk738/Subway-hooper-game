@@ -6,8 +6,11 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 	<title>SUBWAY SUPER HOPPER GAME</title>
 	<meta name="description" content="Subway Super Hopper — a cute endless runner with global leaderboards. Hop to the Top! Jump, dodge, collect coins & power-ups, and compete for the #1 score!" />
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
 	<link rel="stylesheet" href="./style.css" />
+	<link rel="manifest" href="./manifest.webmanifest" />
+	<link rel="icon" href="./icons/icon-192.png" type="image/png" />
+	<link rel="apple-touch-icon" href="./icons/icon-192.png" />
+	<meta name="theme-color" content="#21f14f" />
 </head>
 
 <body>
@@ -97,6 +100,7 @@
 	</div>
 
 	<div id="ui-layer">
+		<div id="offline-status" role="status" aria-live="polite">PREPARING OFFLINE PLAY…</div>
 		<header class="arcade-header"><span class="brand">SUPER HOPPER<span class="brand-dot">®</span></span><span class="edition">THE NEVER-STOP ARCADE</span></header>
 		<div id="run-district" class="hidden"></div><div id="danger-display" class="hidden"></div><div id="rescue-countdown" class="hidden" role="status" aria-live="assertive">3</div>
 		<div id="board-btn" class="hidden" role="status" aria-label="Active ride">COLLECT A BOARD OR JETPACK</div>
@@ -159,7 +163,7 @@
 			<h1 class="title">GAME OVER</h1>
 			<p class="subtitle">SCORE: <span id="final-score">0</span></p>
 			<p id="coins-collected">🪙 <span id="final-coins">0</span> COINS</p>
-			<p id="personal-best" class="hidden">BEST: <span id="best-score">0</span></p>
+			<p id="personal-best" class="hidden"><span id="best-scope">DEVICE BEST</span>: <span id="best-score">0</span></p>
 			<button id="restart-btn">TRY AGAIN</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn-go">TOP HOPPERS ↗</button>
@@ -178,18 +182,19 @@
 	</div>
 
 	<!-- Scripts -->
-	<!-- Supabase CDN (lightweight, ~12KB gzipped) -->
-	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+	<!-- Locally bundled: startup never waits for a CDN. -->
+	<script src="./vendor/supabase.min.js"></script>
 
 	<!-- Using ES Modules for Three.js -->
 	<script type="importmap">
       {
         "imports": {
-          "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+          "three": "./vendor/three.module.min.js"
         }
       }
     </script>
 
 	<script type="module" src="./script.js"></script>
+	<script type="module" src="./offline.js"></script>
 </body>
 </html>
