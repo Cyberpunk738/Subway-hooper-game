@@ -19,6 +19,7 @@ Open `http://localhost:8080`. Three.js, fonts, and the optional Supabase client 
 | Left/right swipe, arrow keys or A/D | Switch lanes |
 | Tap, upward swipe, Up/W or Space | Jump |
 | P, Escape or pause button | Pause/resume |
+| B or SKATE button | Activate a ready skateboard |
 | Enter or Space on the home screen | Start |
 
 Mobile also has dedicated direction and jump buttons. Swipes trigger while the finger is still moving, once per gesture. Choose Super Sensitive (10px), Snappy (14px), or Steady (24px) on the home screen; the preference is saved locally. Short taps jump, while cancelled gestures do nothing.
@@ -43,6 +44,16 @@ Open **Characters** from the home or game-over screen. HOP (bunny) is free; MARI
 
 Run coins and daily-streak bonuses fund purchases. New characters require coins, with no automatic score unlocks. Legacy coins, selected skins and previously unlocked skins are preserved. A single saved wallet stores balance, ownership and selection together; purchases survive browser reloads on the same device.
 
+## Missions, districts and skating
+
+- **Daily missions:** three rotating challenges track coins, distance, jumps, runs, close calls, district visits, rides or tricks. Open Missions to claim completed coin rewards once. Progress resets at local midnight and shares the same saved wallet as purchases.
+- **Near-miss chains:** pass within 0.6 units of an obstacle without touching it to build a chain. Close calls within five active-play seconds raise the score multiplier to a maximum of ×4. The game records the gap while alongside the obstacle, so moving towards it after passing cannot create a bonus.
+- **Four districts:** every 400 metres cycles through Colour City, Neon Underpass, Skyline Rooftops and Sunset Boardwalk. Scenery, sky, ground and obstacle patterns change. Tunnel rows can block two lanes but preserve an adjacent safe route. Buildings, arches and railings use instanced geometry.
+- **Character personality:** six characters have distinct entrance gestures, airborne poses and end-of-run celebrations while retaining equal gameplay abilities.
+- **Skateboarding:** every run starts with one charge. Collect board pickups for more (two stored charges maximum), then press B or SKATE for a 15-second ride. Jump to perform kickflips, shuvits and heelflips; landing awards 15 points. An active board breaks to absorb one crash before shield protection is used. Timers freeze while paused.
+- **Board designs:** Street Deck is free, Neon Rush costs 150 coins and Cosmic Cruise costs 300. Designs are permanent cosmetic purchases; all have the same duration and protection.
+- **Rescue:** the first unprotected crash offers one optional 30-coin rescue, paid from the existing bank. Accepting freezes gameplay for a three-second countdown, removes nearby hazards and grants three seconds of protection. Declining banks the run's coins; a later fatal crash ends the rescued run. Rescue never banks run coins twice.
+
 ## Share a score image
 
 After a run, **Share Image** previews a 1080 × 1350 PNG card with your score, coins, name, run character and the current game URL. Choose **Share Image** again to send the prepared PNG through the device share sheet when file sharing is supported. Choose **Download Image** to save it, or long-press the preview on mobile and attach it manually.
@@ -56,7 +67,8 @@ No build step or test dependencies:
 ```sh
 node --check script.js
 node --check game-art.js
+node --check progression.js
 node --test tests/*.test.*
 ```
 
-The tests cover image generation and export failure paths, native file-share capability/cancellation/denial, download and copy fallbacks, stale previews, wallet migration, purchases, persistence, insufficient funds and storage failures, plus existing input/physics/timing regressions. They use a small DOM/rendering harness; physical-device share-sheet behaviour still requires device testing.
+The tests cover daily rollover and reward claims, board purchases, near-miss chains, rescue payment/countdown, image generation and export failure paths, native file-share capability/cancellation/denial, download and copy fallbacks, stale previews, wallet migration, purchases, persistence, insufficient funds and storage failures, plus existing input/physics/timing regressions. They use a small DOM/rendering harness; physical-device share-sheet behaviour still requires device testing.

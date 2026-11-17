@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
 import { CHARACTERS, portraitSVG, renderScoreCard } from "./game-art.js";
 import {
 	initSupabase,
@@ -116,7 +117,10 @@ function readWallet() {
 		wallet = { bank: Number(localStorage.getItem(COINS_BANK_KEY)) || 0, owned: Array.isArray(owned) ? owned : ["default"], selected: localStorage.getItem(SELECTED_SKIN_KEY) };
 	}
 	const owned = [...new Set(["default", ...wallet.owned.filter(id => SKINS.some(c => c.id === id))])];
-	return { bank: Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(wallet.bank) || 0))), owned, selected: owned.includes(wallet.selected) ? wallet.selected : "default" };
+	return { bank: Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(wallet.bank) || 0))), owned, selected: owned.includes(wallet.selected) ? wallet.selected : "default",
+		boards: [...new Set(["street", ...(Array.isArray(wallet.boards) ? wallet.boards : []).filter(id => BOARDS.some(b => b.id === id))])],
+		board: Array.isArray(wallet.boards) && wallet.boards.includes(wallet.board) && BOARDS.some(b => b.id === wallet.board) ? wallet.board : "street",
+		daily: dailyProgress(wallet.daily) };
 }
 function writeWallet(wallet) { localStorage.setItem(WALLET_KEY, JSON.stringify(wallet)); }
 function getCoinBank() { return readWallet().bank; }
@@ -240,7 +244,8 @@ let state = {
 	nextMilestoneIdx: 0,
 	lastThemeScore: 0,
 	themeTransition: null,
-	maxCombo: 0
+	maxCombo: 0,
+	...freshRunFeatures()
 };
 
 // --- DOM ELEMENTS ---
@@ -341,7 +346,7 @@ function spawnDustTrail() {
 	const pos = player.position.clone();
 	pos.y = 0.1;
 	pos.z += 0.5;
-	spawnParticles(pos, 0xcccccc, 1, 0.3, 10);
+	spawnParticles(pos, state.boardTicks > 0 ? 0x62e9ff : 0xcccccc, 1, 0.3, 10);
 }
 
 // --- THEMES ---
@@ -592,35 +597,14 @@ function showMilestone(text) {
 // =============================================
 
 function checkThemeTransition() {
-	const interval = 500;
-	const currentInterval = Math.floor(state.score / interval);
-	const lastInterval = Math.floor(state.lastThemeScore / interval);
-
-	if (currentInterval > lastInterval && !state.themeTransition) {
-		state.lastThemeScore = state.score;
-		const newTheme = THEMES[Math.floor(Math.random() * THEMES.length)];
-		if (newTheme.name !== state.theme.name) {
-			state.themeTransition = {
-				fromSky: scene.background.clone(),
-				toSky: new THREE.Color(newTheme.sky),
-				fromFog: scene.fog.color.clone(),
-				toFog: new THREE.Color(newTheme.sky),
-				progress: 0,
-				newTheme: newTheme
-			};
-		}
-	}
-
-	if (state.themeTransition) {
-		state.themeTransition.progress += 0.008;
-		const t = state.themeTransition.progress;
-		scene.background.copy(state.themeTransition.fromSky).lerp(state.themeTransition.toSky, t);
-		scene.fog.color.copy(state.themeTransition.fromFog).lerp(state.themeTransition.toFog, t);
-		if (t >= 1) {
-			state.theme = state.themeTransition.newTheme;
-			state.themeTransition = null;
-		}
-	}
+	const nextIndex = Math.floor(state.distance / 400) % DISTRICTS.length;
+	if (nextIndex !== state.districtIndex) enterDistrict(nextIndex);
+	if (!state.themeTransition) return;
+	const transition = state.themeTransition;
+	transition.progress = Math.min(1, transition.progress + 1 / 90);
+	scene.background.copy(transition.fromSky).lerp(transition.toSky, transition.progress);
+	scene.fog.color.copy(scene.background);
+	if (transition.progress >= 1) state.themeTransition = null;
 }
 
 // =============================================
@@ -734,6 +718,7 @@ function renderShop() {
 		renderShop();
 		updateBankDisplay();
 	}));
+	renderBoardShop();
 	const selected = SKINS.find(c => c.id === wallet.selected);
 	document.getElementById("selected-character-name").textContent = selected.name;
 }
@@ -1076,6 +1061,223 @@ async function handleScoreSubmission(finalScore) {
 	}
 }
 
+// --- MISSIONS, SKATING, DISTRICTS AND RESCUE ---
+function freshRunFeatures() {
+ return {distance:0,pendingDistance:0,districtIndex:0,safeLane:0,runTicks:0,
+  dangerChain:0,dangerTimer:0,boardCharges:1,boardTicks:0,boardSpawnRows:8,
+  jumpTicks:0,tricks:0,rescueUsed:false,countdownTicks:0,invulnerableTicks:0};
+}
+function advanceMissions(metric, amount=1) {
+ if (!MISSION_POOL.some(m=>m.metric===metric) || amount<=0) return;
+ const wallet=readWallet();
+ wallet.daily.metrics[metric]=(wallet.daily.metrics[metric]||0)+amount;
+ try {writeWallet(wallet);} catch { /* gameplay continues if local storage is unavailable */ }
+}
+function flushDistanceMission() {
+ if (state.pendingDistance>=1) {advanceMissions('distance',Math.floor(state.pendingDistance));state.pendingDistance%=1;}
+}
+function claimMission(id, day=localDay()) {
+ const wallet=readWallet(), mission=missionsForDay().find(m=>m.id===id);
+ if (!mission || day!==wallet.daily.date || wallet.daily.claimed.includes(id) || (wallet.daily.metrics[mission.metric]||0)<mission.target) return false;
+ wallet.bank+=mission.reward;wallet.daily.claimed.push(id);
+ try {writeWallet(wallet);return true;} catch {return false;}
+}
+function renderMissions() {
+ const wallet=readWallet();
+ document.getElementById('mission-date').textContent=`${wallet.daily.date} · resets at local midnight`;
+ document.getElementById('mission-list').innerHTML=missionsForDay().map(m=>{
+  const value=Math.min(m.target,wallet.daily.metrics[m.metric]||0),claimed=wallet.daily.claimed.includes(m.id);
+  return `<article class="mission-card"><div><h3>${m.label}</h3><b>+${m.reward} COINS</b></div><progress max="${m.target}" value="${value}">${value}/${m.target}</progress><div><span>${value} / ${m.target}</span><button data-mission="${m.id}" ${claimed||value<m.target?'disabled':''}>${claimed?'CLAIMED':value>=m.target?'CLAIM REWARD':'IN PROGRESS'}</button></div></article>`;
+ }).join('');
+ document.querySelectorAll('[data-mission]').forEach(button=>button.addEventListener('click',()=>{
+  const success=claimMission(button.dataset.mission,wallet.daily.date);
+  document.getElementById('mission-status').textContent=success?'Reward added to your coin bank.':'Reward unavailable. Please check today’s missions or allow site storage.';
+  renderMissions();updateBankDisplay();
+ }));
+}
+let missionReturnFocus=null;
+function openMissions() {flushDistanceMission();missionReturnFocus=document.activeElement;renderMissions();document.getElementById('missions-overlay').classList.remove('hidden');document.getElementById('close-missions-btn').focus();}
+function closeMissions() {document.getElementById('missions-overlay').classList.add('hidden');missionReturnFocus?.focus();}
+function buyOrEquipBoard(id) {
+ const board=BOARDS.find(b=>b.id===id),wallet=readWallet();
+ if(!board) return false;
+ if(!wallet.boards.includes(id)) {if(wallet.bank<board.cost)return false;wallet.bank-=board.cost;wallet.boards.push(id);}
+ wallet.board=id;
+ try {writeWallet(wallet);return true;} catch {return false;}
+}
+function renderBoardShop() {
+ const wallet=readWallet();
+ document.getElementById('board-grid').innerHTML=BOARDS.map(board=>{
+  const owned=wallet.boards.includes(board.id),selected=wallet.board===board.id,missing=board.cost-wallet.bank;
+  return `<article class="character-card ${selected?'character-equipped':''}"><div class="board-art">${boardSVG(board)}</div><h3>${board.name}</h3><p>Cosmetic design · same protection and duration</p><b>${owned?'OWNED':`${board.cost} COINS`}</b><button data-board="${board.id}" ${selected||(!owned&&missing>0)?'disabled':''}>${selected?'EQUIPPED':owned?'EQUIP':missing>0?`NEED ${missing} MORE`:'BUY + EQUIP'}</button></article>`;
+ }).join('');
+ document.querySelectorAll('[data-board]').forEach(button=>button.addEventListener('click',()=>{
+  document.getElementById('shop-status').textContent=buyOrEquipBoard(button.dataset.board)?'Board equipped for your next ride.':'Could not save this purchase. No coins were spent.';
+  renderShop();updateBankDisplay();
+ }));
+}
+let boardModel=null;
+function createSkateboard() {
+ const board=BOARDS.find(b=>b.id===readWallet().board)||BOARDS[0],group=new THREE.Group(),geo=getCachedGeos();
+ const deck=new THREE.Mesh(geo.unitBox,new THREE.MeshStandardMaterial({color:board.color,roughness:0.6}));
+ deck.scale.set(0.64,0.065,1.12);deck.position.y=-0.07;group.add(deck);
+ const stripe=new THREE.Mesh(geo.unitBox,new THREE.MeshBasicMaterial({color:board.accent}));
+ stripe.scale.set(0.65,0.012,0.24);stripe.position.set(0,-0.031,0.1);group.add(stripe);
+ const wheels=new THREE.MeshStandardMaterial({color:0x202437});
+ for(const x of [-0.28,0.28])for(const z of [-0.36,0.36]){
+  const wheel=new THREE.Mesh(geo.obstacleCylinder,wheels);wheel.rotation.z=Math.PI/2;wheel.scale.set(0.1,0.11,0.1);wheel.position.set(x,-0.13,z);group.add(wheel);
+ }
+ group.userData.boardColor=board.color;
+ return group;
+}
+function activateBoard() {
+ if(!state.isPlaying||paused||rescuePending||state.countdownTicks||state.boardTicks>0||state.boardCharges<1)return false;
+ state.boardCharges--;state.boardTicks=15*60;
+ boardModel=createSkateboard();player.add(boardModel);
+ advanceMissions('boards');showMilestone('SKATE ON · 15 SECONDS');updateFeatureHUD();return true;
+}
+function endBoard(broken=false) {
+ if(boardModel){player?.remove(boardModel);disposeMeshMaterials(boardModel);boardModel=null;}
+ state.boardTicks=0;
+ if(broken){state.dangerChain=0;state.dangerTimer=0;showMilestone('BOARD BROKE · SAVED!');sfxShieldBreak();}
+ updateFeatureHUD();
+}
+function landBoardTrick() {
+ if(!state.boardTicks||state.jumpTicks<12)return;
+ state.tricks++;state.score+=15;advanceMissions('tricks');
+ const names=['KICKFLIP','SHUVIT','HEELFLIP'];
+ document.getElementById('near-miss-flash').textContent=`${names[(state.tricks-1)%3]} +15`;
+ showNearMiss();
+ if(boardModel)boardModel.rotation.set(0,0,0);
+}
+function registerNearMiss() {
+ state.nearMissCount++;state.dangerChain++;state.dangerTimer=300;
+ const multiplier=dangerMultiplier(state.dangerChain),bonus=25*multiplier;
+ state.score+=bonus;advanceMissions('near');
+ document.getElementById('near-miss-flash').textContent=`CLOSE CALL ×${multiplier} +${bonus}`;
+ showNearMiss();updateFeatureHUD();
+}
+function updateFeatureHUD() {
+ const board=document.getElementById('board-btn');
+ const label=state.boardTicks>0?`SKATING · ${Math.ceil(state.boardTicks/60)}s`:`SKATE [${state.boardCharges}]`;
+ if(board.textContent!==label)board.textContent=label;
+ board.disabled=state.boardTicks>0||state.boardCharges<1||!!state.countdownTicks;
+ const district=document.getElementById('run-district');
+ district.textContent=`${DISTRICTS[state.districtIndex].name} · ${Math.floor(state.distance)}m`;
+ const danger=document.getElementById('danger-display');
+ danger.classList.toggle('hidden',!state.dangerChain);
+ danger.textContent=`CLOSE CALLS ×${dangerMultiplier(state.dangerChain)} · ${state.dangerChain} CHAIN`;
+}
+function updateRunFeatures() {
+ state.runTicks++;
+ if(state.invulnerableTicks>0)state.invulnerableTicks--;
+ if(state.dangerTimer>0&&--state.dangerTimer===0){state.dangerChain=0;updateFeatureHUD();}
+ if(state.boardTicks>0&&--state.boardTicks===0)endBoard();
+ if(boardModel&&state.isJumping){
+  const phase=Math.min(1,state.jumpTicks/42),turn=phase*Math.PI*2;
+  boardModel.rotation.set(0,state.tricks%3===1?turn:0,state.tricks%3===1?0:(state.tricks%3===2?-turn:turn));
+ }
+ if(state.runTicks%300===0)flushDistanceMission();
+ if(state.runTicks%15===0)updateFeatureHUD();
+ if(player&&state.invulnerableTicks>0)player.visible=state.invulnerableTicks%12<8;else if(player)player.visible=true;
+}
+function enterDistrict(index) {
+ state.districtIndex=index;state.theme=DISTRICTS[index];
+ state.themeTransition={fromSky:scene.background.clone(),toSky:new THREE.Color(state.theme.sky),progress:0};
+ for(let i=floorGroups.length-1;i>=0;i--){const group=floorGroups[i];if(group.userData.districtBackdrop){disposeOwnedObject(group);scene.remove(group);floorGroups.splice(i,1);}}
+ floorGroups[0].material.color.set(state.theme.ground);
+ if(index===0)createCityBackdrop();else createDistrictScenery(index);
+ advanceMissions('districts');showMilestone(state.theme.name);updateFeatureHUD();
+}
+function createDistrictScenery(index) {
+ const group=new THREE.Group(),geo=getCachedGeos();
+ const batches=new Map();
+ const add=(x,y,z,sx,sy,sz,color,glow=false)=>{
+  const key=`${color}:${glow}`,transform=new THREE.Object3D();
+  transform.position.set(x,y,z);transform.scale.set(sx,sy,sz);transform.updateMatrix();
+  if(!batches.has(key))batches.set(key,{color,glow,matrices:[]});
+  batches.get(key).matrices.push(transform.matrix.clone());
+ };
+ if(index===1){
+  // Roof and sidewalls enclose the corridor; luminous arches guide the route.
+  add(0,9,-44,12,0.25,112,0x232238);
+  for(const side of [-1,1])add(side*5.7,4,-44,0.3,8,112,0x24283f);
+  for(let i=0;i<9;i++){
+   const z=-5-i*12;
+   for(const side of [-1,1])add(side*4.8,3,z,0.14,6,0.18,0x62e9ff,true);
+   add(0,6,z,9.7,0.14,0.18,0xb797ff,true);
+  }
+ }else if(index===2){
+  const towerMaterial=new THREE.MeshStandardMaterial({color:0x526985,roughness:0.9});
+  const towers=new THREE.InstancedMesh(geo.unitBox,towerMaterial,24),t=new THREE.Object3D();
+  for(let i=0;i<24;i++){t.position.set((i%2?1:-1)*(13+i%3*4),-3-i%4,-i*4);t.scale.set(5,8+i%5,4);t.updateMatrix();towers.setMatrixAt(i,t.matrix);}group.add(towers);
+  for(const side of [-1,1]){
+   add(side*4.7,0.4,-42,0.18,0.8,115,0xb797ff);
+   for(let i=0;i<5;i++){add(side*7,1.7,-12-i*20,0.12,3.4,0.12,0x303e5d);add(side*7,3.1,-12-i*20,2.6,0.12,0.12,0x303e5d);}
+  }
+ }else{
+  for(const side of [-1,1]){
+   add(side*13,-0.4,-42,17,0.1,130,0x71bcce);
+   add(side*4.6,0.8,-42,0.12,0.13,118,0xffe1a1);
+   for(let i=0;i<14;i++)add(side*4.6,0.4,10-i*9,0.14,0.8,0.14,0xb78569);
+  }
+  const sun=new THREE.Mesh(new THREE.CircleGeometry(7,24),new THREE.MeshBasicMaterial({color:0xffe198,fog:false}));sun.position.set(-14,16,-82);group.add(sun);
+ }
+ for(const {color,glow,matrices} of batches.values()){
+  const mesh=new THREE.InstancedMesh(geo.unitBox,new THREE.MeshStandardMaterial({color,emissive:glow?color:0,emissiveIntensity:glow?0.45:0,roughness:0.9}),matrices.length);
+  matrices.forEach((matrix,i)=>mesh.setMatrixAt(i,matrix));group.add(mesh);
+ }
+ group.userData.districtBackdrop=true;scene.add(group);floorGroups.push(group);
+}
+function requestRescue() {
+ if(state.rescueUsed){gameOver();return;}
+ rescuePending=true;paused=true;gesture=null;jumpBuffer=0;stopMusic();flushDistanceMission();
+ const overlay=document.getElementById('rescue-overlay');overlay.classList.remove('hidden');
+ const button=document.getElementById('rescue-btn');button.disabled=getCoinBank()<RESCUE_COST;
+ document.getElementById('rescue-balance').textContent=`${getCoinBank()} banked coins · rescue costs ${RESCUE_COST}. Run coins bank when you finish.`;
+ document.getElementById('end-run-btn').focus();
+}
+function rescueRun() {
+ if(!rescuePending||state.rescueUsed)return false;
+ const wallet=readWallet();if(wallet.bank<RESCUE_COST)return false;
+ wallet.bank-=RESCUE_COST;
+ try{writeWallet(wallet);}catch{document.getElementById('rescue-balance').textContent='Could not save the payment. No coins spent. Try again or finish your run.';return false;}
+ state.rescueUsed=true;rescuePending=false;paused=false;state.countdownTicks=180;state.invulnerableTicks=180;
+ state.dangerChain=0;state.dangerTimer=0;state.isJumping=false;state.playerY=0;state.jumpVel=0;
+ for(let i=worldObjects.length-1;i>=0;i--)if(worldObjects[i].type==='obstacle'&&worldObjects[i].mesh.position.z>-8){const obj=worldObjects.splice(i,1)[0];disposeMeshMaterials(obj.mesh);scene.remove(obj.mesh);}
+ document.getElementById('rescue-overlay').classList.add('hidden');
+ document.getElementById('rescue-countdown').textContent='3';document.getElementById('rescue-countdown').classList.remove('hidden');
+ updateBankDisplay();lastTime=performance.now();accumulator=0;ensureLoop();return true;
+}
+function updateCelebration() {
+ if(!player?.userData?.limbs||celebrationTicks<=0)return;
+ celebrationTicks--;
+ const species=SKINS.find(c=>c.id===player.userData.characterId).species,phase=celebrationTicks/90;
+ const styles={bunny:[0.35,0.4,1],bear:[0.12,1.1,0.3],fox:[0.2,0.35,2],robot:[0.05,0.05,0],cat:[0.18,0.7,-1],astronaut:[0.32,0.9,0.5]};
+ const [bounce,arms,turns]=styles[species];
+ player.visible=true;player.position.y=Math.abs(Math.sin(phase*Math.PI*2))*bounce;
+ player.rotation.y=Math.PI+(species==='robot'?Math.sin(phase*16)*0.25:phase*Math.PI*2*turns);
+ for(const {arm,side} of player.userData.limbs){arm.rotation.x=-1.2;arm.rotation.z=side*arms;}
+}
+function initRunnerFeatures() {
+ document.getElementById('missions-btn').addEventListener('click',openMissions);
+ document.getElementById('missions-btn-go').addEventListener('click',openMissions);
+ document.getElementById('close-missions-btn').addEventListener('click',closeMissions);
+ document.getElementById('missions-overlay').addEventListener('click',e=>{if(e.target.id==='missions-overlay')closeMissions();});
+ document.getElementById('missions-overlay').addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.preventDefault();closeMissions();}
+  if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll('button:not(:disabled)')],first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+ });
+ document.getElementById('board-btn').addEventListener('click',activateBoard);
+ document.getElementById('rescue-btn').addEventListener('click',rescueRun);
+ document.getElementById('end-run-btn').addEventListener('click',()=>{if(rescuePending)gameOver();});
+ document.getElementById('rescue-overlay').addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.preventDefault();gameOver();}
+  if(e.key==='Tab'){const rescue=document.getElementById('rescue-btn'),end=document.getElementById('end-run-btn');e.preventDefault();(document.activeElement===end&&!rescue.disabled?rescue:end).focus();}
+ });
+ window.addEventListener('pagehide',flushDistanceMission);
+}
+
 // --- INIT ---
 function init() {
 	// Initialize Supabase
@@ -1133,6 +1335,7 @@ function init() {
 	initMobileButtons();
 
 	initRunSettings();
+	initRunnerFeatures();
 	// UI Handlers
 	document.getElementById("start-btn").addEventListener("click", startGame);
 	document.getElementById("restart-btn").addEventListener("click", startGame);
@@ -1302,11 +1505,25 @@ function createPlayer() {
 
 function animateCharacter() {
 	if (!player.userData?.limbs) return;
+	const species = SKINS.find(c => c.id === player.userData.characterId)?.species || "bunny";
+	const poses = {
+		bunny: { arms:-1, knees:0.85, entry:1.2, tilt:0.08 },
+		bear: { arms:-0.55, knees:0.32, entry:0.65, tilt:0.04 },
+		fox: { arms:-1.15, knees:0.5, entry:1.5, tilt:0.16 },
+		robot: { arms:-1.5, knees:0.25, entry:0.3, tilt:0 },
+		cat: { arms:-0.75, knees:0.7, entry:0.9, tilt:-0.14 },
+		astronaut: { arms:-0.3, knees:0.2, entry:0.45, tilt:0.06 }
+	};
+	const pose = poses[species];
 	const stride = Math.sin(simulationTime * 0.022) * 0.65;
+	const entrance = Math.max(0, 1 - state.runTicks / 60);
+	const wave = Math.sin(entrance * Math.PI) * pose.entry;
+	player.scale.set(1 + wave * 0.08, 1 - wave * 0.04, 1 + wave * 0.08);
+	player.rotation.z += wave * pose.tilt;
 	for (const { arm, leg, side } of player.userData.limbs) {
-		arm.rotation.x = state.isJumping ? -0.85 : stride * side;
-		arm.rotation.z = side * (state.isJumping ? -0.35 : -0.08);
-		leg.rotation.x = state.isJumping ? 0.4 : -stride * side;
+		arm.rotation.x = state.boardTicks > 0 ? -0.45 : state.isJumping ? pose.arms : stride * side - wave;
+		arm.rotation.z = side * (state.isJumping ? -0.35 : -0.08 - wave * 0.2);
+		leg.rotation.x = state.boardTicks > 0 ? side * 0.35 : state.isJumping ? pose.knees : -stride * side;
 	}
 }
 
@@ -1363,6 +1580,11 @@ function createObstacleMesh(kind = Math.floor(Math.random() * OBSTACLES.length))
 }
 
 function createDecorationMesh() {
+	if (state.districtIndex === 1) {
+		const pillar = new THREE.Group();
+		const post = new THREE.Mesh(getCachedGeos().unitBox, new THREE.MeshStandardMaterial({ color: 0x62e9ff, emissive: 0x2877a0, emissiveIntensity: 0.7 }));
+		post.position.y = 1.5; post.scale.set(0.25, 3, 0.25); pillar.add(post); return pillar;
+	}
 	const geos = getCachedGeos();
 	const group = new THREE.Group();
 	const bark = new THREE.MeshStandardMaterial({ color: 0x655077, flatShading: true });
@@ -1376,7 +1598,7 @@ function createDecorationMesh() {
 	group.add(trunk);
 	const canopy = new THREE.Mesh(geos.leaves, leaves);
 	canopy.position.y = 1.9;
-	canopy.scale.set(1, 1.3, 1);
+	canopy.scale.set(state.districtIndex === 3 ? 1.6 : 1, state.districtIndex === 3 ? 0.6 : 1.3, 1);
 	canopy.castShadow = true;
 	group.add(canopy);
 	return group;
@@ -1424,6 +1646,7 @@ function createCityBackdrop() {
 	}
 	group.add(clouds);
 	scene.add(group);
+	group.userData.districtBackdrop = true;
 	floorGroups.push(group);
 }
 
@@ -1491,24 +1714,29 @@ function spawnRow(zStart = -60) {
 		worldObjects.push({ mesh: dR, type: "decor" });
 	}
 
-	// Obstacle Logic
 	let obstacleLane = null;
-	if (Math.random() > 0.3) {
+	let blocked = [];
+	if (Math.random() > 0.2) {
 		let lane = Math.floor(Math.random() * 3) - 1;
-		obstacleLane = lane;
-
-		const obs = createObstacleMesh();
-		obs.position.set(lane * CONFIG.laneWidth, 0, zStart);
-		scene.add(obs);
-		worldObjects.push({ mesh: obs, type: "obstacle", lane: lane, passed: false });
+		if (state.districtIndex === 1) {
+			const candidates = [-1,0,1].filter(n => Math.abs(n - state.safeLane) <= 1);
+			state.safeLane = candidates[Math.floor(Math.random() * candidates.length)];
+			blocked = [-1,0,1].filter(n => n !== state.safeLane);
+		} else blocked = [lane];
+		obstacleLane = blocked[0];
+		for (const blockedLane of blocked) {
+			const kind = state.districtIndex === 2 ? 0 : state.districtIndex === 3 ? 2 : Math.floor(Math.random() * 3);
+			const obs = createObstacleMesh(kind);
+			obs.position.set(blockedLane * CONFIG.laneWidth, 0, zStart);
+			scene.add(obs);
+			worldObjects.push({ mesh: obs, type: "obstacle", lane: blockedLane, passed: false });
+		}
 	}
 
 	// Coin Logic — 40% chance, never on same lane as obstacle
 	if (Math.random() > 0.6) {
 		let coinLane = Math.floor(Math.random() * 3) - 1;
-		if (coinLane === obstacleLane) {
-			coinLane = coinLane === 1 ? -1 : coinLane + 1;
-		}
+		if (blocked.includes(coinLane)) coinLane = [-1,0,1].find(lane => !blocked.includes(lane));
 		const coinMesh = createCoinMesh();
 		coinMesh.position.set(coinLane * CONFIG.laneWidth, 1.0, zStart);
 		scene.add(coinMesh);
@@ -1520,14 +1748,21 @@ function spawnRow(zStart = -60) {
 	if (powerupSpawnCounter >= 25 && Math.random() > 0.5) {
 		powerupSpawnCounter = 0;
 		let puLane = Math.floor(Math.random() * 3) - 1;
-		if (puLane === obstacleLane) {
-			puLane = puLane === 1 ? -1 : puLane + 1;
-		}
+		if (blocked.includes(puLane)) puLane = [-1,0,1].find(lane => !blocked.includes(lane));
 		const puType = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
 		const puMesh = createPowerupMesh(puType);
 		puMesh.position.set(puLane * CONFIG.laneWidth, 1.2, zStart);
 		scene.add(puMesh);
 		worldObjects.push({ mesh: puMesh, type: "powerup", powerupType: puType, lane: puLane });
+	}
+	state.boardSpawnRows++;
+	if (state.boardSpawnRows >= 12) {
+		state.boardSpawnRows = 0;
+		const board = createSkateboard();
+		board.position.set(([-1,0,1].find(lane => !blocked.includes(lane))) * CONFIG.laneWidth, 1.1, zStart);
+		board.rotation.z = 0.35;
+		scene.add(board);
+		worldObjects.push({ mesh: board, type: "board" });
 	}
 }
 
@@ -1548,7 +1783,7 @@ function startGame() {
 		isJumping: false,
 		jumpVel: 0,
 		playerY: 0,
-		theme: THEMES[0],
+		theme: DISTRICTS[0],
 		hasShield: false,
 		hasMagnet: false,
 		has2x: false,
@@ -1561,7 +1796,8 @@ function startGame() {
 		nextMilestoneIdx: 0,
 		lastThemeScore: 0,
 		themeTransition: null,
-		maxCombo: 0
+		maxCombo: 0,
+		...freshRunFeatures()
 	};
 
 	powerupSpawnCounter = 0;
@@ -1607,6 +1843,11 @@ function startGame() {
 		uiBadge.classList.remove("hidden");
 	}
 
+	advanceMissions("runs");
+	document.getElementById("rescue-overlay").classList.add("hidden");
+	document.getElementById("board-btn").classList.remove("hidden");
+	document.getElementById("run-district").classList.remove("hidden");
+	updateFeatureHUD();
 	// Environment Setup
 	scene.background = new THREE.Color(state.theme.sky);
 	scene.fog = new THREE.Fog(state.theme.sky, CONFIG.fogNear, CONFIG.fogFar);
@@ -1683,8 +1924,18 @@ function goHome() {
 
 function gameOver() {
 	if (!state.isPlaying) return;
+	flushDistanceMission();
+	rescuePending = false;
+	paused = false;
+	document.getElementById("rescue-overlay").classList.add("hidden");
+	document.getElementById("board-btn").classList.add("hidden");
+	document.getElementById("run-district").classList.add("hidden");
+	document.getElementById("danger-display").classList.add("hidden");
+	state.dangerChain = 0; state.dangerTimer = 0;
+	endBoard(false);
+	celebrationTicks = 90;
 	state.isPlaying = false;
-	deathTicks = 60;
+	deathTicks = 90;
 	document.body.classList.remove("running");
 	document.getElementById("pause-btn").classList.add("hidden");
 
@@ -1725,28 +1976,31 @@ function gameOver() {
 
 	// Check achievements
 	checkAchievements();
+	if (!loopActive) { lastTime = performance.now(); accumulator = 0; ensureLoop(); }
 
 }
 
 // All controls use the same actions. A short jump buffer makes late landing taps count.
+let rescuePending = false;
+let celebrationTicks = 0;
 let jumpBuffer = 0;
 let paused = false;
 let gesture = null;
 let swipeThreshold = Number(localStorage.getItem("hopper_sensitivity")) || 14;
 function moveLane(direction) {
-	if (state.isPlaying && !paused) state.lane = Math.max(-1, Math.min(1, state.lane + direction));
+	if (state.isPlaying && !paused && !state.countdownTicks) state.lane = Math.max(-1, Math.min(1, state.lane + direction));
 }
 function requestJump() {
-	if (state.isPlaying && !paused) jumpBuffer = 8;
+	if (state.isPlaying && !paused && !state.countdownTicks) jumpBuffer = 8;
 }
 function overlayOpen() {
-	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay"), document.getElementById("share-overlay")]
+	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay"), document.getElementById("share-overlay"), document.getElementById("missions-overlay"), document.getElementById("rescue-overlay")]
 		.some(el => !el.classList.contains("hidden"));
 }
 function handleInput(e) {
 	if (e.target.closest("input, select, textarea") || overlayOpen()) return;
 	if (e.target.closest("button") && ["Space", "Enter"].includes(e.code)) return;
-	if (!["ArrowLeft", "ArrowRight", "ArrowUp", "Space", "Enter", "Escape", "KeyP", "KeyA", "KeyD", "KeyW"].includes(e.code)) return;
+	if (!["ArrowLeft", "ArrowRight", "ArrowUp", "Space", "Enter", "Escape", "KeyP", "KeyA", "KeyD", "KeyW", "KeyB"].includes(e.code)) return;
 	e.preventDefault();
 	if (e.repeat) return;
 	if (e.code === "Escape" || e.code === "KeyP") { togglePause(); return; }
@@ -1755,6 +2009,7 @@ function handleInput(e) {
 		return;
 	}
 	if (paused) return;
+	if (e.code === "KeyB") { activateBoard(); return; }
 	if (["ArrowLeft", "KeyA"].includes(e.code)) moveLane(-1);
 	else if (["ArrowRight", "KeyD"].includes(e.code)) moveLane(1);
 	else requestJump();
@@ -1791,7 +2046,8 @@ function initMobileButtons() {
 	if (isTouchDevice()) document.getElementById("mobile-controls").classList.remove("hidden");
 }
 function togglePause(force) {
-	if (!state.isPlaying) return;
+	if (!state.isPlaying || rescuePending) return;
+	if (force === true) flushDistanceMission();
 	paused = typeof force === "boolean" ? force : !paused;
 	gesture = null;
 	jumpBuffer = 0;
@@ -1840,7 +2096,7 @@ function animate(now) {
 	lastTime = now;
 	while (accumulator >= STEP_MS) {
 		if (state.isPlaying && !paused) updateGame();
-		else if (!state.isPlaying && deathTicks > 0) { updateParticles(); deathTicks--; }
+		else if (!state.isPlaying && deathTicks > 0) { updateParticles(); updateCelebration(); deathTicks--; }
 		accumulator -= STEP_MS;
 	}
 	renderer.render(scene, camera);
@@ -1848,12 +2104,23 @@ function animate(now) {
 	else loopActive = false;
 }
 function updateGame() {
+	if (state.countdownTicks > 0) {
+		state.countdownTicks--;
+		const countdown = document.getElementById("rescue-countdown");
+		countdown.textContent = state.countdownTicks > 0 ? String(Math.ceil(state.countdownTicks / 60)) : "GO!";
+		countdown.classList.toggle("hidden", state.countdownTicks === 0);
+		if (!state.countdownTicks) startMusic();
+		return;
+	}
+	updateRunFeatures();
 	simulationTime += STEP_MS;
 	_frameNow = simulationTime;
 	if (jumpBuffer > 0) {
 		jumpBuffer--;
 		if (!state.isJumping) {
 			state.isJumping = true;
+			state.jumpTicks = 0;
+			advanceMissions("jumps");
 			state.jumpVel = CONFIG.jumpPower;
 			jumpBuffer = 0;
 			sfxJump();
@@ -1861,7 +2128,9 @@ function updateGame() {
 	}
 	// Update Score and Speed
 	const scoreAdd = state.has2x ? state.speed * 2 : state.speed;
-	state.score += scoreAdd;
+	state.score += scoreAdd * dangerMultiplier(state.dangerChain);
+	state.distance += state.speed * 2;
+	state.pendingDistance += state.speed * 2;
 	state.speed = Math.min(CONFIG.maxSpeed, state.speed + CONFIG.speedInc);
 	const scoreText = String(Math.floor(state.score));
 	if (elScore.textContent !== scoreText) elScore.textContent = scoreText;
@@ -1873,16 +2142,18 @@ function updateGame() {
 
 	// Player Jump Physics
 	if (state.isJumping) {
+		state.jumpTicks++;
 		state.playerY += state.jumpVel;
 		state.jumpVel -= CONFIG.gravity;
 		if (state.playerY <= 0) {
 			state.playerY = 0;
 			state.isJumping = false;
+			landBoardTrick();
 		}
 	} else {
 		state.playerY = Math.abs(Math.sin(_frameNow * 0.015)) * 0.1;
 	}
-	player.position.y = state.playerY + 0.05;
+	player.position.y = state.playerY + (state.boardTicks > 0 ? 0.18 : 0.05);
 
 	// Player Rotation
 	player.rotation.z = (targetX - state.currentLaneX) * -0.12;
@@ -1947,7 +2218,10 @@ function updateGame() {
 				const feetClearObstacle = state.playerY + 0.05 >= hitbox.height;
 
 				if (dx < hitbox.halfWidth && !feetClearObstacle) {
-					if (state.hasShield) {
+					if (state.invulnerableTicks > 0 || state.boardTicks > 0) {
+						if (state.boardTicks > 0 && state.invulnerableTicks <= 0) { endBoard(true); state.invulnerableTicks = 75; }
+						disposeMeshMaterials(obj.mesh); scene.remove(obj.mesh); worldObjects.splice(i, 1); continue;
+					} else if (state.hasShield) {
 						// Shield absorbs the hit
 						state.hasShield = false;
 						state.shieldTimer = 0;
@@ -1965,21 +2239,24 @@ function updateGame() {
 						updatePowerupHUD();
 						continue;
 					} else {
-						gameOver();
+						requestRescue();
 						return;
 					}
 				}
 			}
 		}
 
-		// Near miss detection
-		if (obj.type === "obstacle" && !obj.nearMissChecked && obj.mesh.position.z > 1.0) {
-			obj.nearMissChecked = true;
-			const nmDx = Math.abs(player.position.x - obj.mesh.position.x);
-			if (nmDx < 1.5 && nmDx >= (obj.mesh.userData?.hitbox?.halfWidth || 0.8)) {
-				state.nearMissCount++;
-				state.score += 25;
-				showNearMiss();
+		// Record the closest gap while level with the runner; a late lane change
+		// after an obstacle has passed cannot manufacture a near miss.
+		if (obj.type === "obstacle") {
+			const width = obj.mesh.userData?.hitbox?.halfWidth || 0.8;
+			if (Math.abs(obj.mesh.position.z) < 1.3 && state.playerY < 0.8 && !state.invulnerableTicks) {
+				const gap = Math.abs(player.position.x - obj.mesh.position.x) - width;
+				obj.closestGap = Math.min(obj.closestGap ?? Infinity, gap);
+			}
+			if (!obj.nearMissChecked && obj.mesh.position.z > 1.3) {
+				obj.nearMissChecked = true;
+				if (obj.closestGap >= 0 && obj.closestGap < 0.6) registerNearMiss();
 			}
 		}
 
@@ -1992,6 +2269,7 @@ function updateGame() {
 					const comboMult = getComboMultiplier();
 					const coinValue = 10 * comboMult * (state.has2x ? 2 : 1);
 					state.coins++;
+					advanceMissions("coins");
 					state.score += coinValue;
 					elCoins.innerText = state.coins;
 
@@ -2010,6 +2288,16 @@ function updateGame() {
 					worldObjects.splice(i, 1);
 					continue;
 				}
+			}
+		}
+
+		if (obj.type === "board") {
+			obj.mesh.rotation.y += 0.025;
+			if (Math.abs(obj.mesh.position.z) < 1 && Math.abs(player.position.x - obj.mesh.position.x) < 1) {
+				state.boardCharges = Math.min(2, state.boardCharges + 1);
+				showMilestone("BOARD READY · B / SKATE");
+				disposeMeshMaterials(obj.mesh); scene.remove(obj.mesh); worldObjects.splice(i, 1);
+				updateFeatureHUD(); continue;
 			}
 		}
 
