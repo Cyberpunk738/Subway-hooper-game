@@ -598,15 +598,49 @@ function showMilestone(text) {
 // THEME TRANSITION SYSTEM
 // =============================================
 
+// Preserve each material's normal rendering state while scenery overlaps.
+function captureDistrictMaterials(groups) {
+ const seen=new Set(),materials=[];
+ for(const group of groups)group.traverse(object=>{
+  for(const material of (Array.isArray(object.material)?object.material:object.material?[object.material]:[])){
+   if(seen.has(material))continue;seen.add(material);
+   materials.push({material,opacity:material.opacity,transparent:material.transparent,depthWrite:material.depthWrite});
+  }
+ });
+ return materials;
+}
+function fadeDistrictMaterials(entries,weight) {
+ for(const entry of entries){
+  const {material}=entry,transparent=weight<1?true:entry.transparent;
+  if(material.transparent!==transparent){material.transparent=transparent;material.needsUpdate=true;}
+  material.depthWrite=weight<1?false:entry.depthWrite;
+  material.opacity=entry.opacity*weight;
+ }
+}
+function finishDistrictTransition() {
+ const transition=state.themeTransition;
+ if(!transition)return;
+ fadeDistrictMaterials(transition.incomingMaterials,1);
+ for(const group of transition.outgoing){
+  disposeOwnedObject(group);scene.remove(group);
+  const index=floorGroups.indexOf(group);if(index!==-1)floorGroups.splice(index,1);
+ }
+ state.themeTransition=null;
+}
 function checkThemeTransition() {
-	const nextIndex = Math.floor(state.distance / 400) % DISTRICTS.length;
-	if (nextIndex !== state.districtIndex) enterDistrict(nextIndex);
-	if (!state.themeTransition) return;
-	const transition = state.themeTransition;
-	transition.progress = Math.min(1, transition.progress + 1 / 90);
-	scene.background.copy(transition.fromSky).lerp(transition.toSky, transition.progress);
-	scene.fog.color.copy(scene.background);
-	if (transition.progress >= 1) state.themeTransition = null;
+ const nextIndex=Math.floor(state.distance/400)%DISTRICTS.length;
+ if(nextIndex!==state.districtIndex)enterDistrict(nextIndex);
+ const transition=state.themeTransition;if(!transition)return;
+ transition.progress=Math.min(1,transition.progress+1/90);
+ // Smoothstep starts and ends gently; simulation timing also freezes on pause.
+ const t=transition.progress,weight=t*t*(3-2*t);
+ scene.background.copy(transition.fromSky).lerp(transition.toSky,weight);
+ scene.fog.color.copy(scene.background);
+ floorGroups[0].material.color.copy(transition.fromGround).lerp(transition.toGround,weight);
+ for(const rail of transition.rails)rail.material.color.copy(rail.from).lerp(transition.toRail,weight);
+ fadeDistrictMaterials(transition.outgoingMaterials,1-weight);
+ fadeDistrictMaterials(transition.incomingMaterials,weight);
+ if(t>=1)finishDistrictTransition();
 }
 
 // =============================================
@@ -1324,12 +1358,22 @@ function updateRunFeatures() {
  if(player&&state.invulnerableTicks>0)player.visible=state.invulnerableTicks%12<8;else if(player)player.visible=true;
 }
 function enterDistrict(index) {
+ // Completing an interrupted fade bounds scenery to the outgoing/incoming pair.
+ finishDistrictTransition();
+ const outgoing=floorGroups.filter(group=>group.userData.districtBackdrop);
  state.districtIndex=index;state.theme=DISTRICTS[index];
- state.themeTransition={fromSky:scene.background.clone(),toSky:new THREE.Color(state.theme.sky),progress:0};
- for(let i=floorGroups.length-1;i>=0;i--){const group=floorGroups[i];if(group.userData.districtBackdrop){disposeOwnedObject(group);scene.remove(group);floorGroups.splice(i,1);}}
- floorGroups[0].material.color.set(state.theme.ground);
- for(const piece of floorGroups)if(piece.userData.edgeRail)piece.material.color.set(index===1?0x45485c:0xffd85c);
+ const transition={
+  fromSky:scene.background.clone(),toSky:new THREE.Color(state.theme.sky),
+  fromGround:floorGroups[0].material.color.clone(),toGround:new THREE.Color(state.theme.ground),
+  rails:floorGroups.filter(piece=>piece.userData.edgeRail).map(piece=>({material:piece.material,from:piece.material.color.clone()})),
+  toRail:new THREE.Color(index===1?0x45485c:0xffd85c),outgoing,
+  outgoingMaterials:captureDistrictMaterials(outgoing),progress:0
+ };
  if(index===0)createCityBackdrop();else createDistrictScenery(index);
+ const incoming=floorGroups.filter(group=>group.userData.districtBackdrop&&!outgoing.includes(group));
+ transition.incomingMaterials=captureDistrictMaterials(incoming);
+ fadeDistrictMaterials(transition.incomingMaterials,0);
+ state.themeTransition=transition;
  advanceMissions('districts');showMilestone(state.theme.name);updateFeatureHUD();
 }
 function createDistrictScenery(index) {
