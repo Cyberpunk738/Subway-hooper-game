@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { OUTFITS, BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
+import { JETPACK_SPACING, jetpackReady, OUTFITS, BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
 import { CHARACTERS, portraitSVG, renderScoreCard } from "./game-art.js";
 import {
 	initSupabase,
@@ -1000,6 +1000,7 @@ async function openLeaderboard(tab) {
 	if (tabAll) { tabAll.classList.toggle("lb-tab-active", tab === "all"); }
 	if (tabWeek) { tabWeek.classList.toggle("lb-tab-active", tab === "week"); }
 
+	if(navigator.onLine===false){elLeaderboardList.innerHTML='<li class="lb-empty">GLOBAL SCORES NEED INTERNET.<br />YOUR COINS, MISSIONS AND DEVICE BEST STILL SAVE OFFLINE.</li>';return;}
 	elLeaderboardList.innerHTML = '<li class="lb-loading">LOADING...</li>';
 
 	const scores = tab === "week" ? await getWeeklyScores(10) : await getTopScores(10);
@@ -1052,20 +1053,24 @@ function initLeaderboardHandlers() {
 // SCORE SUBMISSION
 // =============================================
 
+let scoreSubmissionRequest=0;
 async function handleScoreSubmission(finalScore) {
-	if (!currentUsername || finalScore < 1) return;
-
-	// Submit score (fire and forget — non-blocking)
-	submitScore(currentUsername, finalScore);
-
-	// Show personal best
-	const best = await getPlayerBest(currentUsername);
-	if (best !== null) {
-		elBestScore.textContent = best.toLocaleString();
-		uiPersonalBest.classList.remove("hidden");
-	} else {
-		uiPersonalBest.classList.add("hidden");
-	}
+ if(!currentUsername||finalScore<1)return;
+ const request=++scoreSubmissionRequest,username=currentUsername,key="subway_hopper_local_best:"+username;
+ let localBest=finalScore;
+ try {localBest=Math.max(finalScore,Number(localStorage.getItem(key))||0);localStorage.setItem(key,String(localBest));}catch{/* a blocked leaderboard must never stop gameplay */}
+ elBestScore.textContent=localBest.toLocaleString();
+ document.getElementById("best-scope").textContent="DEVICE BEST";
+ uiPersonalBest.classList.remove("hidden");
+ if(navigator.onLine===false)return;
+ await submitScore(username,localBest);
+ const onlineBest=await getPlayerBest(username);
+ if(request!==scoreSubmissionRequest||state.isPlaying)return;
+ if(onlineBest!==null){
+  const best=Math.max(localBest,onlineBest);
+  elBestScore.textContent=best.toLocaleString();document.getElementById("best-scope").textContent="PERSONAL BEST";
+  try{localStorage.setItem(key,String(best));}catch{/* local quota does not block results */}
+ }
 }
 
 // Reusable showroom models and per-character outfits; purchases stay in the wallet.
@@ -1190,6 +1195,7 @@ function activateFlight() {
 function endFlight(safeLanding=true) {
  if(jetpackModel){player?.remove(jetpackModel);disposeMeshMaterials(jetpackModel);jetpackModel=null;}
  state.flightTicks=0;state.flightLanding=safeLanding&&state.playerY>0;
+ if(safeLanding)state.nextJetpackDistance=state.distance+JETPACK_SPACING;
  if(safeLanding){state.invulnerableTicks=Math.max(state.invulnerableTicks,120);state.isJumping=false;state.jumpVel=0;jumpBuffer=0;}
  for(let i=worldObjects.length-1;i>=0;i--){const obj=worldObjects[i];if(obj.airCoin||safeLanding&&obj.type==='obstacle'&&obj.mesh.position.z>-8){disposeMeshMaterials(obj.mesh);scene.remove(obj.mesh);worldObjects.splice(i,1);}}
  updateFeatureHUD();
@@ -1199,7 +1205,7 @@ function endFlight(safeLanding=true) {
 function freshRunFeatures() {
  return {distance:0,pendingDistance:0,districtIndex:0,safeLane:0,runTicks:0,
   dangerChain:0,dangerTimer:0,boardTicks:0,boardSpawnRows:11,
- flightTicks:0,flightLanding:false,flightSpawnRows:10,flightPath:0,
+ flightTicks:0,flightLanding:false,nextJetpackDistance:JETPACK_SPACING,flightPath:0,
   jumpTicks:0,tricks:0,rescueUsed:false,countdownTicks:0,invulnerableTicks:0};
 }
 function advanceMissions(metric, amount=1) {
@@ -1905,8 +1911,7 @@ function spawnRow(zStart = -60) {
 		scene.add(board);
 		worldObjects.push({ mesh: board, type: "board" });
 	}
- state.flightSpawnRows++;
- if(state.flightSpawnRows>=24){state.flightSpawnRows=0;const pickup=createJetpack();addPickupRing(pickup,0xff9843);pickup.position.set(([-1,0,1].find(l=>!blocked.includes(l)))*CONFIG.laneWidth,1.1,zStart-4);scene.add(pickup);worldObjects.push({mesh:pickup,type:"jetpack"});}
+ if(jetpackReady(state,worldObjects.some(obj=>obj.type==="jetpack"))){state.nextJetpackDistance=state.distance+JETPACK_SPACING;const pickup=createJetpack();addPickupRing(pickup,0xff9843);pickup.position.set(([-1,0,1].find(l=>!blocked.includes(l)))*CONFIG.laneWidth,1.1,zStart-4);scene.add(pickup);worldObjects.push({mesh:pickup,type:"jetpack"});}
  if(state.flightTicks>100)spawnAirCoins(zStart);
 
 }

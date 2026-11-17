@@ -14,6 +14,7 @@ let supabase = null;
  */
 export function initSupabase() {
 	if (supabase) return supabase;
+	if (navigator.onLine === false) return null;
 	try {
 		supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 	} catch (err) {
@@ -29,7 +30,7 @@ export function initSupabase() {
  * @returns {Promise<boolean>} true on success
  */
 export async function submitScore(username, score) {
-	if (!supabase) return false;
+	if (navigator.onLine === false || !initSupabase()) return false;
 	try {
 		const { error } = await supabase
 			.rpc("submit_best_score", { p_username: username, p_score: score });
@@ -50,7 +51,7 @@ export async function submitScore(username, score) {
  * @returns {Promise<Array>} sorted array of { username, score, created_at }
  */
 export async function getTopScores(limit = 10) {
-	if (!supabase) return [];
+	if (navigator.onLine === false || !initSupabase()) return [];
 	try {
 		const { data, error } = await supabase
 			.from("leaderboard")
@@ -74,7 +75,7 @@ export async function getTopScores(limit = 10) {
  * @returns {Promise<number|null>}
  */
 export async function getPlayerBest(username) {
-	if (!supabase) return null;
+	if (navigator.onLine === false || !initSupabase()) return null;
 	try {
 		const { data, error } = await supabase
 			.from("leaderboard")
@@ -96,7 +97,7 @@ export async function getPlayerBest(username) {
  * @returns {Promise<Array>} sorted array of { username, score, created_at }
  */
 export async function getWeeklyScores(limit = 10) {
-	if (!supabase) return [];
+	if (navigator.onLine === false || !initSupabase()) return [];
 	try {
 		const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
 		const { data, error } = await supabase

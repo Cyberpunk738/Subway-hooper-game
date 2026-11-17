@@ -1,3 +1,5 @@
+@font-face {font-family:'Fredoka';font-style:normal;font-weight:300 700;font-display:swap;src:url('./fonts/fredoka-latin.woff2') format('woff2');}
+@font-face {font-family:'Space Grotesk';font-style:normal;font-weight:300 700;font-display:swap;src:url('./fonts/space-grotesk-latin.woff2') format('woff2');}
 :root {
 	--primary-color: #ff6b6b;
 	--secondary-color: #4ecdc4;
@@ -1213,3 +1215,9 @@ button:disabled { cursor:default; opacity:.55; transform:none; box-shadow:none; 
 .character-card .character-preview { display:block; width:100%; height:150px; padding:0; margin:0; border:0; border-radius:10px; box-shadow:none; min-height:0; }
 #board-btn { border:2px solid var(--ink); border-radius:14px; color:var(--ink); box-shadow:2px 3px 0 var(--ink); font-weight:700; pointer-events:none; text-align:center; }
 @media(max-width:600px){.wardrobe-showcase { grid-template-columns:1fr; gap:10px; padding:10px; }#character-showroom,#preview-fallback,#character-showroom canvas { height:230px; }.wardrobe-info h3 { font-size:27px; }.wardrobe-info { padding:0 8px 6px; }.preview-angles { justify-content:center; }#outfit-list { flex-direction:row; flex-wrap:wrap; }#outfit-list button { flex:1; min-width:110px; flex-direction:column; gap:5px; }#board-btn { max-width:190px; font-size:9px; }.character-card .character-preview { height:125px; }}
+
+#offline-status {position:absolute;right:4%;top:76px;font:700 9px var(--pixel-font);letter-spacing:.7px;color:#267d37;max-width:230px;text-align:right;}
+#offline-status[data-offline="true"] {color:var(--ink);background:var(--yellow);border:1px solid;border-radius:999px;padding:6px 9px;}
+.running #offline-status {top:auto;right:auto;left:20px;bottom:106px;}
+.running #offline-status[data-offline="false"] {display:none;}
+@media(max-width:600px){#offline-status {right:20px;top:58px;font-size:8px;}.running #offline-status {bottom:105px;left:16px;max-width:120px;text-align:left;}}
