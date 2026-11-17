@@ -19,7 +19,7 @@ Open `http://localhost:8080`. Three.js, fonts, and the optional Supabase client 
 | Left/right swipe, arrow keys or A/D | Switch lanes |
 | Tap, upward swipe, Up/W or Space | Jump |
 | P, Escape or pause button | Pause/resume |
-| B or SKATE button | Activate a ready skateboard |
+| Collect a ringed skateboard / jetpack | Automatically skate / fly |
 | Enter or Space on the home screen | Start |
 
 Mobile also has dedicated direction and jump buttons. Swipes trigger while the finger is still moving, once per gesture. Choose Super Sensitive (10px), Snappy (14px), or Steady (24px) on the home screen; the preference is saved locally. Short taps jump, while cancelled gestures do nothing.
@@ -40,7 +40,7 @@ Scores, purchased characters, coins, achievements, name and settings are stored 
 
 ## Character shop
 
-Open **Characters** from the home or game-over screen. HOP (bunny) is free; MARINA (bear) costs 50 coins, BOLT (fox) 100, GLITCH (robot) 200, EMBER (cat) 300 and ORBIT (astronaut) 500. Buying equips the character immediately; owned characters can be equipped for free. All have the same gameplay abilities.
+Open **Characters + Boards** from the home or game-over screen. The locker opens at the character section, with a separate Boards tab. Inspect a full-body 3D model using drag rotation or Front/Side/Back buttons; browsers without preview WebGL show an outfit illustration. HOP (bunny) is free; MARINA (bear) costs 50 coins, BOLT (fox) 100, GLITCH (robot) 200, EMBER (cat) 300 and ORBIT (astronaut) 500. Buying equips the character immediately; owned characters can be equipped for free. All have the same gameplay abilities. Each owned character has an Original outfit, an 80-coin Varsity outfit and a 120-coin Night Runner outfit. Outfit purchases and selection persist per character, and the worn outfit appears in the run and its score card.
 
 Run coins and daily-streak bonuses fund purchases. New characters require coins, with no automatic score unlocks. Legacy coins, selected skins and previously unlocked skins are preserved. A single saved wallet stores balance, ownership and selection together; purchases survive browser reloads on the same device.
 
@@ -50,7 +50,8 @@ Run coins and daily-streak bonuses fund purchases. New characters require coins,
 - **Near-miss chains:** pass within 0.6 units of an obstacle without touching it to build a chain. Close calls within five active-play seconds raise the score multiplier to a maximum of ×4. The game records the gap while alongside the obstacle, so moving towards it after passing cannot create a bonus.
 - **Four districts:** every 400 metres cycles through Colour City, Neon Underpass, Skyline Rooftops and Sunset Boardwalk. Scenery, sky, ground and obstacle patterns change. Tunnel rows can block two lanes but preserve an adjacent safe route. Buildings, tunnel walls and railings use instanced geometry. The underpass has plain dark walls, muted posts and neutral track edges without coloured border lighting.
 - **Character personality:** six characters have distinct entrance gestures, airborne poses and end-of-run celebrations while retaining equal gameplay abilities.
-- **Skateboarding:** every run starts with one charge. Collect board pickups for more (two stored charges maximum), then press B or SKATE for a 15-second ride. Jump to perform kickflips, shuvits and heelflips; landing awards 15 points. An active board breaks to absorb one crash before shield protection is used. Timers freeze while paused.
+- **Skateboarding:** collect a green-ringed board, just like a coin pickup, to immediately ride for 15 seconds. No button or stored charge is required; another pickup refreshes the timer. Jump to perform kickflips, shuvits and heelflips; landing awards 15 points. An active board breaks to absorb one crash before shield protection is used. Timers freeze while paused.
+- **Jetpack:** collect the orange-ringed jetpack to fly for ten seconds. Steer left/right through aerial coin trails above ground obstacles. Flight replaces skating, pauses normal jumping, and ends in a smooth protected descent with nearby hazards cleared. Timers freeze while paused; ground coins do not collect from the sky.
 - **Board designs:** Street Deck is free, Neon Rush costs 150 coins and Cosmic Cruise costs 300. Designs are permanent cosmetic purchases; all have the same duration and protection.
 - **Rescue:** the first unprotected crash offers one optional 30-coin rescue, paid from the existing bank. Accepting freezes gameplay for a three-second countdown, removes nearby hazards and grants three seconds of protection. Declining banks the run's coins; a later fatal crash ends the rescued run. Rescue never banks run coins twice.
 
@@ -71,4 +72,4 @@ node --check progression.js
 node --test tests/*.test.*
 ```
 
-The tests cover daily rollover and reward claims, board purchases, near-miss chains, rescue payment/countdown, image generation and export failure paths, native file-share capability/cancellation/denial, download and copy fallbacks, stale previews, wallet migration, purchases, persistence, insufficient funds and storage failures, plus existing input/physics/timing regressions. They use a small DOM/rendering harness; physical-device share-sheet behaviour still requires device testing.
+The tests cover shop scroll reset, outfit purchases/persistence, automatic board/jetpack pickup, flight expiry and vertical coin collection, daily rollover and reward claims, board purchases, near-miss chains, rescue payment/countdown, image generation and export failure paths, native file-share capability/cancellation/denial, download and copy fallbacks, stale previews, wallet migration, purchases, persistence, insufficient funds and storage failures, plus existing input/physics/timing regressions. They use a small DOM/rendering harness; physical-device share-sheet behaviour still requires device testing.

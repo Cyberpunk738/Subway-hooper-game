@@ -48,8 +48,11 @@
 			<p class="eyebrow">MEET YOUR NEXT MAIN</p><h2 id="shop-title">CHARACTER SHOP</h2>
 			<p id="shop-coins">🪙 <span id="shop-coin-count">0</span></p>
 			<p id="shop-status" role="status" aria-live="polite"></p>
+   <div class="shop-tabs" role="tablist" aria-label="Shop section"><button id="shop-tab-characters" role="tab" aria-selected="true" aria-controls="character-section">CHARACTERS + OUTFITS</button><button id="shop-tab-boards" role="tab" aria-selected="false" aria-controls="board-section">BOARDS</button></div>
+   <section id="character-section" role="tabpanel" aria-labelledby="shop-tab-characters">
+    <div class="wardrobe-showcase"><div id="character-showroom"><img id="preview-fallback" alt="Selected character and outfit" /></div><div class="wardrobe-info"><p class="eyebrow">YOUR LOOK. YOUR RUN.</p><h3 id="preview-name">HOP</h3><p id="preview-description"></p><div class="preview-angles"><button id="preview-front">FRONT</button><button id="preview-side">SIDE</button><button id="preview-back">BACK</button></div><p id="preview-note" class="shop-note" role="status">Drag the 3D character to inspect the clothes.</p><div id="outfit-list"></div></div></div>
 			<div id="skin-grid"></div>
-			<h3 class="shop-subtitle">PICK YOUR DECK</h3><p class="shop-note">Permanent designs. Every run starts with one free ride. Collect pickups for more.</p><div id="board-grid"></div>
+			</section><section id="board-section" class="hidden" role="tabpanel" aria-labelledby="shop-tab-boards"><h3 class="shop-subtitle">PICK YOUR DECK</h3><p class="shop-note">Permanent designs. Collect a ringed board on the track to start skating automatically.</p><div id="board-grid"></div></section>
 			<button id="close-shop-btn">CLOSE</button>
 		</div>
 	</div>
@@ -96,7 +99,7 @@
 	<div id="ui-layer">
 		<header class="arcade-header"><span class="brand">SUPER HOPPER<span class="brand-dot">®</span></span><span class="edition">THE NEVER-STOP ARCADE</span></header>
 		<div id="run-district" class="hidden"></div><div id="danger-display" class="hidden"></div><div id="rescue-countdown" class="hidden" role="status" aria-live="assertive">3</div>
-		<button id="board-btn" class="hidden" aria-label="Activate skateboard">SKATE [1]</button>
+		<div id="board-btn" class="hidden" role="status" aria-label="Active ride">COLLECT A BOARD OR JETPACK</div>
 		<button id="pause-btn" class="hidden" aria-label="Pause game">Ⅱ</button>
 		<div id="pause-screen" class="center-screen hidden"><p class="eyebrow">TAKE A BREATHER</p><h1 class="title">ON PAUSE.</h1><p class="subtitle">Your next great run can wait.</p><button id="resume-btn">LET’S GO →</button></div>
 		<!-- HUD: Score -->
@@ -130,7 +133,7 @@
 		<div id="instructions">
 			HOW TO HOP<br />
 			<span class="key">←</span> <span class="key">→</span> SWITCH LANES<br />
-			<span class="key">↑</span> JUMP / TRICK<br /><span class="key">B</span> SKATE
+			<span class="key">↑</span> JUMP / TRICK<br />PICK UP A BOARD / JETPACK TO RIDE
 		</div>
 
 		<div id="start-screen" class="center-screen">

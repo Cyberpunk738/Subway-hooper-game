@@ -41,3 +41,11 @@ test('failed image decoding and failed PNG encoding reject cleanly',async()=>{
   await assert.rejects(renderScoreCard({}),/PNG export failed/);
  } finally {Object.assign(globalThis,original);}
 });
+
+test('outfits change portraits and run cards without changing the character identity',()=>{
+ const character=CHARACTERS[0],outfit={id:'night',color:0x25263b,trim:0x62ff8a};
+ const original=portraitSVG(character),dressed=portraitSVG(character,outfit);
+ assert.notEqual(dressed,original);assert.match(dressed,/#62ff8a/);assert.match(dressed,/#21f14f/);
+ const card=scoreCardSVG({score:50,coins:2,characterId:'default',outfit});
+ assert.match(card,/#62ff8a/);assert.match(card,/>HOP<\/text>/);
+});

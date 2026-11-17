@@ -1195,3 +1195,21 @@ button:disabled { cursor:default; opacity:.55; transform:none; box-shadow:none; 
 #rescue-countdown { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:700 120px 'Fredoka',sans-serif; color:var(--lime); -webkit-text-stroke:3px var(--ink); background:rgba(20,20,20,.2); z-index:19; }
 #powerup-display { top:192px; }#near-miss-flash { font-size:clamp(20px,5vw,34px); white-space:nowrap; }#milestone-banner { font:700 clamp(22px,5vw,40px) 'Fredoka',sans-serif; max-width:90%; text-align:center; }
 @media(max-width:600px){ #board-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }#board-btn { right:16px; bottom:160px; font-size:10px; min-width:100px; }#missions-btn { font-size:9px; padding:11px 9px; }.feature-panel { padding:22px 16px; }#run-district { top:107px; left:16px; font-size:8px; }#danger-display { top:142px; left:16px; font-size:9px; } }
+
+/* The locker always opens on characters; clothing is visible at full-body scale. */
+.shop-tabs { display:flex; gap:8px; position:sticky; top:0; z-index:2; background:var(--paper); padding:10px 0; margin-bottom:14px; }
+.shop-tabs button { flex:1; font-size:10px; padding:11px 6px; border-radius:12px; box-shadow:none; }
+.shop-tabs button[aria-selected="true"] { background:var(--lime); }
+.wardrobe-showcase { display:grid; grid-template-columns:1fr 1fr; gap:18px; border:2px solid var(--ink); border-radius:18px; padding:14px; background:#e5ddff; margin-bottom:22px; }
+#character-showroom { position:relative; height:280px; min-width:0; background:radial-gradient(ellipse at 50% 90%,#c1a9eb 0,transparent 65%); border-radius:12px; }
+#character-showroom canvas { display:block; width:100%; height:280px; touch-action:none; cursor:grab; }
+#preview-fallback { width:100%; height:280px; object-fit:contain; }
+.wardrobe-info { display:flex; flex-direction:column; justify-content:center; min-width:0; }
+.wardrobe-info h3 { font:700 32px 'Fredoka',sans-serif; }.wardrobe-info .eyebrow { text-align:left!important; font-size:8px!important; }
+#preview-description { font-size:10px; line-height:1.6; margin:6px 0 12px; }
+.preview-angles { display:flex; gap:7px; margin-bottom:12px; }.preview-angles button { padding:7px 8px; min-height:34px; font-size:9px; border-radius:8px; box-shadow:none; }
+#outfit-list { display:flex; flex-direction:column; gap:8px; }#outfit-list button { padding:10px 12px; min-height:40px; display:flex; justify-content:space-between; align-items:center; font-size:10px; border-radius:10px; background:var(--yellow); box-shadow:none; }
+#outfit-list small { font-size:8px; margin-left:6px; }
+.character-card .character-preview { display:block; width:100%; height:150px; padding:0; margin:0; border:0; border-radius:10px; box-shadow:none; min-height:0; }
+#board-btn { border:2px solid var(--ink); border-radius:14px; color:var(--ink); box-shadow:2px 3px 0 var(--ink); font-weight:700; pointer-events:none; text-align:center; }
+@media(max-width:600px){.wardrobe-showcase { grid-template-columns:1fr; gap:10px; padding:10px; }#character-showroom,#preview-fallback,#character-showroom canvas { height:230px; }.wardrobe-info h3 { font-size:27px; }.wardrobe-info { padding:0 8px 6px; }.preview-angles { justify-content:center; }#outfit-list { flex-direction:row; flex-wrap:wrap; }#outfit-list button { flex:1; min-width:110px; flex-direction:column; gap:5px; }#board-btn { max-width:190px; font-size:9px; }.character-card .character-preview { height:125px; }}
