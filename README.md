@@ -1,6 +1,6 @@
 # Subway Super Hopper
 
-A Three.js endless runner. Dodge obstacles, collect coins and power-ups, unlock skins, and chase leaderboard records.
+A Three.js endless runner. Dodge obstacles, collect coins and power-ups, buy characters, and chase leaderboard records.
 
 ## Play locally
 
@@ -30,18 +30,24 @@ Mobile also has dedicated direction and jump buttons. Swipes trigger while the f
 - Automatic pause when the tab is hidden or the window loses focus. Resume manually to avoid surprise collisions.
 - Reused world geometry, disposal of retired player/floor resources, fewer HUD writes, and a 1.5 pixel-ratio cap with dynamic shadows disabled on touch devices.
 - Striped road barricades, traffic cones and banded barrels with individual collision widths and jump-clearance heights. All hazard geometry is cached.
-- Expressive low-poly animal runners with hoodie details, cross-body bags, sneakers and animated arms/legs. Skin choices retain a consistent bunny, bear or cat silhouette. Runners face down the negative-Z track, away from the chase camera.
+- Expressive low-poly animal runners with hoodie details, cross-body bags, sneakers and animated arms/legs. Six collectible characters have distinct bunny, bear, fox, robot, cat and astronaut models. Runners face down the negative-Z track, away from the chase camera.
 - A pastel city skyline, warm sun, cloud puffs, planter trees, raised verges and moving road dashes. Buildings, windows and clouds use instanced geometry to limit draw calls.
 - Distant fog starts at 32 units instead of 10; menu backdrop blur is reduced to 2px. Nearby characters and hazards stay clear.
-- Bright arcade menus, touch controls, skins, badges, daily streaks and optional online leaderboards.
+- Bright arcade menus, touch controls, characters, badges, daily streaks and optional online leaderboards.
 
-Scores, purchased skins, coins, achievements, name and settings are stored in the current browser. Scores from before the timing change may have been affected by the device's refresh rate.
+Scores, purchased characters, coins, achievements, name and settings are stored in the current browser. Scores from before the timing change may have been affected by the device's refresh rate.
 
-## Share a score
+## Character shop
 
-After a run, **Share Score** opens the system share sheet when the browser permits it. Unsupported or denied native sharing opens a score dialog with WhatsApp/X links, a copy button and selectable text. Cancelling the system sheet leaves the score alone. The link uses the current deployment URL without tracking parameters or fragments.
+Open **Characters** from the home or game-over screen. HOP (bunny) is free; MARINA (bear) costs 50 coins, BOLT (fox) 100, GLITCH (robot) 200, EMBER (cat) 300 and ORBIT (astronaut) 500. Buying equips the character immediately; owned characters can be equipped for free. All have the same gameplay abilities.
 
-If clipboard access is denied, the dialog tries legacy copy and then leaves the text selected with manual-copy instructions. No popup prompts or automatic social posts are used.
+Run coins and daily-streak bonuses fund purchases. New characters require coins, with no automatic score unlocks. Legacy coins, selected skins and previously unlocked skins are preserved. A single saved wallet stores balance, ownership and selection together; purchases survive browser reloads on the same device.
+
+## Share a score image
+
+After a run, **Share Image** previews a 1080 × 1350 PNG card with your score, coins, name, run character and the current game URL. Choose **Share Image** again to send the prepared PNG through the device share sheet when file sharing is supported. Choose **Download Image** to save it, or long-press the preview on mobile and attach it manually.
+
+The card is drawn locally from original vector artwork; no screenshot permissions, external image service or remote image loading are required. Text/link sharing remains in an expandable fallback. Cancelling native sharing leaves the preview available. Buying a new character after a run does not change that run's card.
 
 ## Checks
 
@@ -49,7 +55,8 @@ No build step or test dependencies:
 
 ```sh
 node --check script.js
-node --test tests/gameplay.test.cjs
+node --check game-art.js
+node --test tests/*.test.*
 ```
 
-The tests exercise native-share success/cancellation/denial, repeated share taps, clipboard/manual-copy fallbacks, modal input blocking, controls, gesture cancellation, sensitivity persistence, pause, refresh-rate timing, bounded catch-up, loop ownership and simulation movement. They use a small DOM/rendering harness; visual rendering and physical-device feel require browser testing.
+The tests cover image generation and export failure paths, native file-share capability/cancellation/denial, download and copy fallbacks, stale previews, wallet migration, purchases, persistence, insufficient funds and storage failures, plus existing input/physics/timing regressions. They use a small DOM/rendering harness; physical-device share-sheet behaviour still requires device testing.

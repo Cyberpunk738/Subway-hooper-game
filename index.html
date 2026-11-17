@@ -44,9 +44,10 @@
 
 	<!-- Shop Overlay -->
 	<div id="shop-overlay" class="hidden">
-		<div id="shop-panel">
-			<h2>🛒 SKIN SHOP</h2>
+		<div id="shop-panel" role="dialog" aria-modal="true" aria-labelledby="shop-title">
+			<p class="eyebrow">MEET YOUR NEXT MAIN</p><h2 id="shop-title">CHARACTER SHOP</h2>
 			<p id="shop-coins">🪙 <span id="shop-coin-count">0</span></p>
+			<p id="shop-status" role="status" aria-live="polite"></p>
 			<div id="skin-grid"></div>
 			<button id="close-shop-btn">CLOSE</button>
 		</div>
@@ -65,11 +66,15 @@
 		<section class="share-panel" role="dialog" aria-modal="true" aria-labelledby="share-title">
 			<p class="eyebrow">MAKE IT A CHALLENGE</p>
 			<h2 id="share-title">BEAT MY RUN.</h2>
+			<img id="score-card-preview" class="hidden" alt="Your Super Hopper score card" />
+			<p id="share-status" role="status" aria-live="polite"></p>
+			<div class="image-share-actions"><button id="share-image-btn" disabled>SHARE IMAGE ↗</button><a id="download-score-btn" class="hidden" download>DOWNLOAD IMAGE ↓</a></div>
+			<details class="text-share-fallback"><summary>Share text instead</summary>
 			<label for="share-text">Your score and game link</label>
 			<textarea id="share-text" rows="5" readonly spellcheck="false"></textarea>
-			<p id="share-status" role="status" aria-live="polite"></p>
 			<button id="copy-score-btn">COPY SCORE + LINK</button>
 			<div class="share-links"><a id="share-whatsapp" target="_blank" rel="noopener noreferrer">WHATSAPP ↗</a><a id="share-x" target="_blank" rel="noopener noreferrer">POST TO X ↗</a></div>
+			</details>
 			<button id="close-share-btn">BACK TO MY RUN</button>
 		</section>
 	</div>
@@ -118,11 +123,12 @@
 			<p class="subtitle">Dodge the chaos. Chase the coins.<br />One more run? Always.</p>
 			<div class="hopper-mascot" aria-hidden="true"><span class="ear left"></span><span class="ear right"></span><span class="mascot-eyes">••</span><span class="mascot-smile"></span><span class="mascot-sticker">LET’S HOP!</span></div>
 			<div id="streak-display" class="hidden"></div>
+			<p class="selected-character">RUNNING WITH <b id="selected-character-name">HOP</b></p>
 			<div id="coin-bank-display">🪙 <span id="bank-coins">0</span></div>
 			<button id="start-btn">LET’S PLAY →</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn">TOP HOPPERS ↗</button>
-				<button id="shop-btn">FRESH SKINS ↗</button>
+				<button id="shop-btn">CHARACTERS ↗</button>
 				<button id="badges-btn">BRAGGING RIGHTS ↗</button>
 			</div>
 			<label class="sensitivity-label" for="sensitivity">SWIPE FEEL <select id="sensitivity"><option value="10">SUPER SENSITIVE</option><option value="14" selected>SNAPPY</option><option value="24">STEADY</option></select></label>
@@ -137,7 +143,8 @@
 			<button id="restart-btn">TRY AGAIN</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn-go">TOP HOPPERS ↗</button>
-				<button id="share-btn">📤 SHARE SCORE</button>
+				<button id="share-btn">📸 SHARE IMAGE</button>
+				<button id="shop-btn-go">CHARACTERS ↗</button>
 				<button id="home-btn">🏠 HOME</button>
 			</div>
 		</div>

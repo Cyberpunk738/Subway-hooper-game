@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function game() {
+function game(storage = new Map()) {
  const elements = new Map();
  function element(id) {
   if (!elements.has(id)) elements.set(id, {
@@ -15,15 +15,16 @@ function game() {
   });
   return elements.get(id);
  }
- const storage = new Map();
- const context = vm.createContext({console, Math, Date, Number, String, Set, URL,
+ const context = vm.createContext({console, Math, Date, Number, String, Set, URL, Blob, File,
   document:{getElementById:element,body:{classList:{add(){},remove(){}}}},
   window:{location:{href:"https://hopper.example/play/?tracking=1#run"}}, navigator:{maxTouchPoints:0},
   localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},
   performance:{now:()=>100}, requestAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
  let source = fs.readFileSync(require('node:path').join(__dirname,'../script.js'),'utf8');
- source = source.replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
+ const art = fs.readFileSync(require('node:path').join(__dirname,'../game-art.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(art, context);
+ source = source.replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
  vm.runInContext(source, context);
  return {run:code=>vm.runInContext(code,context),element,storage};
 }
@@ -126,33 +127,68 @@ test('unsupported native sharing opens a visible fallback with correct score and
  assert.match(g.element('share-text').value,/Afeez scored 1234 points and collected 17 coins/);
  assert.ok(g.element('share-text').value.endsWith('https://hopper.example/play/'));
  assert.equal(new URL(g.element('share-whatsapp').href).searchParams.get('text'),g.element('share-text').value);
- assert.equal(g.element('copy-score-btn').focused,true);
+ assert.equal(g.element('close-share-btn').focused,true);
 });
 
-test('native sharing uses structured data and does not copy or open fallback on success',async()=>{
- const g=game();g.run('let shared; navigator.share=async data=>{shared=data};');
+function mockPNG(g, supported = true) {
+ g.run(`renderScoreCard=async()=>new Blob(['png'],{type:'image/png'}); navigator.canShare=()=>${supported};`);
+}
+
+test('image sharing sends a prepared PNG File on the second user gesture',async()=>{
+ const g=game();mockPNG(g);
+ g.run('let shared; navigator.share=async data=>{shared=data}; state.score=4096;');
  await g.run('shareScore()');
- assert.equal(g.run('shared.url'),'https://hopper.example/play/');
- assert.equal(g.element('share-overlay').classList.contains('hidden'),true);
+ assert.equal(g.element('share-image-btn').disabled,false);
+ assert.equal(g.element('download-score-btn').download,'super-hopper-4096.png');
+ assert.equal(g.run('shared'),undefined,'no native sheet before the user chooses Share Image');
+ await g.run('shareScoreImage()');
+ assert.equal(g.run('shared.files[0].type'),'image/png');
+ assert.equal(g.run('shared.files[0].name'),'super-hopper-4096.png');
  assert.equal(g.run('shareInProgress'),false);
 });
 
-test('native cancellation stays cancelled; denied native share opens fallback',async()=>{
- const g=game();g.run('navigator.share=async()=>{throw {name:"AbortError"}};');
- await g.run('shareScore()');
- assert.equal(g.element('share-overlay').classList.contains('hidden'),true);
- g.run('navigator.share=async()=>{throw {name:"NotAllowedError"}};');
- await g.run('shareScore()');
+test('cancelling file sharing keeps the preview; a denied sheet preserves download',async()=>{
+ const g=game();mockPNG(g);g.run('navigator.share=async()=>{throw {name:"AbortError"}};');
+ await g.run('shareScore()');await g.run('shareScoreImage()');
  assert.equal(g.element('share-overlay').classList.contains('hidden'),false);
+ assert.equal(g.run('shareInProgress'),false);
+ g.run('navigator.share=async()=>{throw {name:"NotAllowedError"}};');
+ await g.run('shareScoreImage()');
+ assert.equal(g.element('download-score-btn').classList.contains('hidden'),false);
+ assert.match(g.element('share-status').textContent,/Download/);
 });
 
-test('repeated taps do not open concurrent native share requests',async()=>{
- const g=game();g.run('let shares=0, finish; navigator.share=()=>{shares++;return new Promise(resolve=>{finish=resolve})};');
- const pending=g.run('shareScore()');
+test('repeated taps cannot open concurrent native file share requests',async()=>{
+ const g=game();mockPNG(g);
+ g.run('let shares=0, finish; navigator.share=()=>{shares++;return new Promise(resolve=>{finish=resolve})};');
  await g.run('shareScore()');
- assert.equal(g.run('shares'),1);
- g.run('finish()');await pending;
+ const pending=g.run('shareScoreImage()');await g.run('shareScoreImage()');
+ assert.equal(g.run('shares'),1);g.run('finish()');await pending;
  assert.equal(g.run('shareInProgress'),false);
+});
+
+test('file sharing unsupported still provides a PNG download',async()=>{
+ const g=game();mockPNG(g,false);await g.run('shareScore()');
+ assert.equal(g.element('share-image-btn').disabled,true);
+ assert.equal(g.element('download-score-btn').classList.contains('hidden'),false);
+ assert.match(g.element('download-score-btn').href,/^blob:/);
+});
+
+test('failed image export leaves text fallback and never offers a broken download',async()=>{
+ const g=game();g.run('renderScoreCard=async()=>{throw new Error("Canvas unavailable")};');
+ await g.run('shareScore()');
+ assert.equal(g.element('download-score-btn').classList.contains('hidden'),true);
+ assert.equal(g.element('share-image-btn').disabled,true);
+ assert.match(g.element('share-status').textContent,/could not be created/);
+ assert.match(g.element('share-text').value,/points/);
+});
+
+test('closing during image generation prevents a stale preview appearing',async()=>{
+ const g=game();g.run('let finishPNG; renderScoreCard=()=>new Promise(resolve=>{finishPNG=resolve});');
+ const pending=g.run('shareScore()');g.run('closeScoreShareDialog();finishPNG(new Blob(["png"],{type:"image/png"}));');
+ await pending;
+ assert.equal(g.run('scoreCard'),null);
+ assert.equal(g.element('share-overlay').classList.contains('hidden'),true);
 });
 
 test('copy feedback reports success only when clipboard write succeeds',async()=>{
@@ -181,4 +217,46 @@ test('share dialog blocks background start shortcuts',()=>{
  assert.equal(g.run('starts'),0);
  g.run('closeScoreShareDialog()');
  assert.equal(g.element('share-overlay').classList.contains('hidden'),true);
+});
+
+
+test('legacy coins and unlocked skins migrate without charging existing owners',()=>{
+ const storage=new Map([['subway_hopper_bank','175'],['subway_hopper_skins','["default","blue"]'],['subway_hopper_skin_sel','blue']]);
+ const g=game(storage);
+ assert.equal(g.run('getCoinBank()'),175);assert.equal(g.run('getSelectedSkin()'),'blue');
+ const result=g.run('buyOrEquipCharacter("blue")');assert.equal(result.ok,true);
+ assert.equal(g.run('getCoinBank()'),175);
+ const reload=game(storage);assert.equal(reload.run('getSelectedSkin()'),'blue');
+});
+
+test('buying debits exactly once, equips the character and survives reload',()=>{
+ const storage=new Map();const g=game(storage);g.run('saveCoinBank(150);');
+ assert.equal(g.run('buyOrEquipCharacter("gold").ok'),true);
+ assert.equal(g.run('getCoinBank()'),50);assert.equal(g.run('getSelectedSkin()'),'gold');
+ assert.equal(g.run('getUnlockedSkins().includes("gold")'),true);
+ g.run('buyOrEquipCharacter("gold")');assert.equal(g.run('getCoinBank()'),50);
+ const reload=game(storage);assert.equal(reload.run('getCoinBank()'),50);
+ assert.equal(reload.run('getSelectedSkin()'),'gold');
+});
+
+test('insufficient coins and invalid characters cannot change the wallet',()=>{
+ const g=game();g.run('saveCoinBank(49);');
+ assert.equal(g.run('buyOrEquipCharacter("blue").ok'),false);
+ assert.equal(g.run('buyOrEquipCharacter("fake").ok'),false);
+ assert.equal(g.run('getCoinBank()'),49);assert.equal(g.run('getSelectedSkin()'),'default');
+ assert.equal(g.run('getUnlockedSkins().length'),1);
+});
+
+test('denied purchase storage never partially spends coins or grants ownership',()=>{
+ const storage=new Map();const g=game(storage);g.run('saveCoinBank(500);');
+ g.run('localStorage.setItem=()=>{throw new Error("Quota exceeded")};');
+ assert.equal(g.run('buyOrEquipCharacter("ruby").ok'),false);
+ const reload=game(storage);assert.equal(reload.run('getCoinBank()'),500);
+ assert.equal(reload.run('getUnlockedSkins().includes("ruby")'),false);
+});
+
+test('corrupt ownership data cannot equip unowned or unknown characters',()=>{
+ const g=game(new Map([['subway_hopper_character_wallet_v1','{"bank":-10,"owned":["fake"],"selected":"cosmic"}']]));
+ assert.equal(g.run('getCoinBank()'),0);assert.equal(g.run('getSelectedSkin()'),'default');
+ g.run('saveSelectedSkin("cosmic")');assert.equal(g.run('getSelectedSkin()'),'default');
 });
