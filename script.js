@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CHARACTERS, portraitSVG, renderScoreCard } from "./game-art.js";
 import {
 	initSupabase,
 	submitScore,
@@ -32,15 +33,8 @@ const MILESTONES = [
 	{ score: 10000, label: "10KM!" }
 ];
 
-// --- UNLOCKABLE SKINS ---
-const SKINS = [
-	{ id: "default", name: "CLASSIC", color: 0x21f14f, cost: 0, unlockScore: 0 },
-	{ id: "blue", name: "OCEAN", color: 0x4fc3f7, cost: 50, unlockScore: 100 },
-	{ id: "gold", name: "GOLD", color: 0xffd700, cost: 100, unlockScore: 500 },
-	{ id: "neon", name: "NEON", color: 0x76ff03, cost: 200, unlockScore: 1000 },
-	{ id: "ruby", name: "RUBY", color: 0xff1744, cost: 300, unlockScore: 2500 },
-	{ id: "cosmic", name: "COSMIC", color: 0xea80fc, cost: 500, unlockScore: 5000 }
-];
+// Legacy IDs are retained for existing owners. All new unlocks cost coins.
+const SKINS = CHARACTERS;
 
 // --- ACHIEVEMENTS ---
 const ACHIEVEMENTS = [
@@ -53,7 +47,7 @@ const ACHIEVEMENTS = [
 	{ id: 6, name: "DAREDEVIL", desc: "Get 5 near misses in one run", icon: "💀" },
 	{ id: 7, name: "SURVIVOR", desc: "Survive a Speed Zone", icon: "⚡" },
 	{ id: 8, name: "DEDICATED", desc: "7-day streak", icon: "📅" },
-	{ id: 9, name: "FASHIONISTA", desc: "Buy a skin", icon: "👗" }
+	{ id: 9, name: "FASHIONISTA", desc: "Buy a character", icon: "👗" }
 ];
 
 // --- PERFORMANCE: Geometry Cache & Helpers ---
@@ -112,15 +106,40 @@ function getStreakData() {
 	catch(e) { return { lastDate: null, count: 0 }; }
 }
 function saveStreakData(d) { localStorage.setItem(STREAK_KEY, JSON.stringify(d)); }
-function getCoinBank() { return parseInt(localStorage.getItem(COINS_BANK_KEY)) || 0; }
-function saveCoinBank(n) { localStorage.setItem(COINS_BANK_KEY, String(n)); }
-function getUnlockedSkins() {
-	try { return JSON.parse(localStorage.getItem(SKINS_UNLOCKED_KEY)) || ["default"]; }
-	catch(e) { return ["default"]; }
+const WALLET_KEY = "subway_hopper_character_wallet_v1";
+function readWallet() {
+	let wallet;
+	try { wallet = JSON.parse(localStorage.getItem(WALLET_KEY)); } catch { /* migrate legacy data */ }
+	if (!wallet || !Array.isArray(wallet.owned)) {
+		let owned;
+		try { owned = JSON.parse(localStorage.getItem(SKINS_UNLOCKED_KEY)); } catch { /* default below */ }
+		wallet = { bank: Number(localStorage.getItem(COINS_BANK_KEY)) || 0, owned: Array.isArray(owned) ? owned : ["default"], selected: localStorage.getItem(SELECTED_SKIN_KEY) };
+	}
+	const owned = [...new Set(["default", ...wallet.owned.filter(id => SKINS.some(c => c.id === id))])];
+	return { bank: Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(wallet.bank) || 0))), owned, selected: owned.includes(wallet.selected) ? wallet.selected : "default" };
 }
-function saveUnlockedSkins(s) { localStorage.setItem(SKINS_UNLOCKED_KEY, JSON.stringify(s)); }
-function getSelectedSkin() { return localStorage.getItem(SELECTED_SKIN_KEY) || "default"; }
-function saveSelectedSkin(id) { localStorage.setItem(SELECTED_SKIN_KEY, id); }
+function writeWallet(wallet) { localStorage.setItem(WALLET_KEY, JSON.stringify(wallet)); }
+function getCoinBank() { return readWallet().bank; }
+function saveCoinBank(n) { const wallet = readWallet(); wallet.bank = Math.max(0, Math.floor(n)); writeWallet(wallet); }
+function getUnlockedSkins() { return readWallet().owned; }
+function saveUnlockedSkins(owned) { const wallet = readWallet(); wallet.owned = owned; writeWallet(wallet); }
+function getSelectedSkin() { return readWallet().selected; }
+function saveSelectedSkin(id) { const wallet = readWallet(); if (wallet.owned.includes(id)) { wallet.selected = id; writeWallet(wallet); } }
+
+// One stored wallet makes a purchase a single write: no partial coin/ownership updates.
+function buyOrEquipCharacter(id) {
+	const character = SKINS.find(c => c.id === id);
+	if (!character) return { ok: false, message: "Choose a character from the shop." };
+	const wallet = readWallet();
+	const buying = !wallet.owned.includes(id);
+	if (buying && wallet.bank < character.cost) return { ok: false, message: `You need ${character.cost - wallet.bank} more coins for ${character.name}.` };
+	if (buying) { wallet.bank -= character.cost; wallet.owned.push(id); }
+	wallet.selected = id;
+	try { writeWallet(wallet); }
+	catch { return { ok: false, message: "Your browser could not save this purchase. No coins were spent. Allow site storage and try again." }; }
+	if (buying) { try { grantAchievement(9); } catch { /* purchase is already saved */ } }
+	return { ok: true, message: `${character.name} ${buying ? "bought and equipped" : "equipped"}!` };
+}
 function getAchievementBits() { return parseInt(localStorage.getItem(ACHIEVEMENTS_KEY)) || 0; }
 function saveAchievementBits(b) { localStorage.setItem(ACHIEVEMENTS_KEY, String(b)); }
 function hasAchievement(bf, id) { return (bf & (1 << id)) !== 0; }
@@ -683,75 +702,40 @@ function updateBankDisplay() {
 }
 
 // =============================================
-// SKIN UNLOCK SYSTEM
+// CHARACTER SHOP
 // =============================================
-
-function checkSkinUnlocks(score) {
-	const unlocked = getUnlockedSkins();
-	let changed = false;
-	for (const skin of SKINS) {
-		if (!unlocked.includes(skin.id) && score >= skin.unlockScore) {
-			unlocked.push(skin.id);
-			changed = true;
-		}
-	}
-	if (changed) saveUnlockedSkins(unlocked);
-}
-
-// =============================================
-// COIN SHOP
-// =============================================
-
+let shopReturnFocus = null;
 function openShop() {
+	shopReturnFocus = document.activeElement;
 	document.getElementById("shop-overlay").classList.remove("hidden");
+	document.getElementById("shop-status").textContent = "All characters play equally. Pick your personality.";
 	renderShop();
+	document.getElementById("close-shop-btn").focus();
 }
-
-function closeShop() {
-	document.getElementById("shop-overlay").classList.add("hidden");
-}
-
+function closeShop() { document.getElementById("shop-overlay").classList.add("hidden"); shopReturnFocus?.focus(); }
 function renderShop() {
 	const grid = document.getElementById("skin-grid");
-	const coinEl = document.getElementById("shop-coin-count");
-	const bank = getCoinBank();
-	if (coinEl) coinEl.textContent = bank;
-	const unlocked = getUnlockedSkins();
-	const selected = getSelectedSkin();
-	grid.innerHTML = SKINS.map(function(skin) {
-		const isUnlocked = unlocked.includes(skin.id);
-		const isSelected = selected === skin.id;
-		const canAfford = bank >= skin.cost;
-		let label, cls;
-		if (isSelected) { label = "✓ EQUIPPED"; cls = "skin-equipped"; }
-		else if (isUnlocked) { label = "SELECT"; cls = "skin-unlocked"; }
-		else if (canAfford) { label = "🪙 " + skin.cost; cls = "skin-buyable"; }
-		else { label = "🔒 " + skin.cost; cls = "skin-locked"; }
-		const hex = "#" + skin.color.toString(16).padStart(6, "0");
-		return '<div class="skin-item ' + cls + '" data-skin="' + skin.id + '">' +
-			'<div class="skin-color" style="background:' + hex + '"></div>' +
-			'<div class="skin-name">' + skin.name + '</div>' +
-			'<div class="skin-action">' + label + '</div></div>';
+	const wallet = readWallet();
+	document.getElementById("shop-coin-count").textContent = wallet.bank;
+	grid.innerHTML = SKINS.map(character => {
+		const owned = wallet.owned.includes(character.id), selected = wallet.selected === character.id;
+		const missing = character.cost - wallet.bank;
+		const label = selected ? "✓ EQUIPPED" : owned ? "EQUIP" : missing > 0 ? `NEED ${missing} MORE` : `BUY · ${character.cost} COINS`;
+		const disabled = selected || (!owned && missing > 0);
+		return `<article class="character-card ${selected ? "character-equipped" : ""}">
+			<div class="character-art" style="--character-color:#${character.color.toString(16).padStart(6,"0")}"><img alt="${character.species} character ${character.name}" src="data:image/svg+xml,${encodeURIComponent(portraitSVG(character))}" /></div>
+			<div class="character-meta"><h3>${character.name}</h3><span>${character.species.toUpperCase()}</span></div>
+			<p>${character.tagline}</p><div class="character-price">${owned ? "OWNED" : `🪙 ${character.cost} COINS`}</div>
+			<button data-character="${character.id}" ${disabled ? "disabled" : ""}>${label}</button></article>`;
 	}).join("");
-	grid.querySelectorAll(".skin-item").forEach(function(el) {
-		el.style.pointerEvents = "auto";
-		el.addEventListener("click", function() {
-			const skinId = el.dataset.skin;
-			const skin = SKINS.find(function(s) { return s.id === skinId; });
-			const ul = getUnlockedSkins();
-			if (ul.includes(skinId)) {
-				saveSelectedSkin(skinId);
-			} else if (getCoinBank() >= skin.cost) {
-				saveCoinBank(getCoinBank() - skin.cost);
-				ul.push(skinId);
-				saveUnlockedSkins(ul);
-				saveSelectedSkin(skinId);
-				grantAchievement(9);
-			}
-			renderShop();
-			updateBankDisplay();
-		});
-	});
+	grid.querySelectorAll("[data-character]").forEach(button => button.addEventListener("click", () => {
+		const result = buyOrEquipCharacter(button.dataset.character);
+		document.getElementById("shop-status").textContent = result.message;
+		renderShop();
+		updateBankDisplay();
+	}));
+	const selected = SKINS.find(c => c.id === wallet.selected);
+	document.getElementById("selected-character-name").textContent = selected.name;
 }
 
 // =============================================
@@ -828,6 +812,9 @@ let currentLBTab = "all";
 // =============================================
 
 let shareInProgress = false;
+let lastRun = null;
+let scoreCard = null;
+let scoreCardRequest = 0;
 let shareDialogReturnFocus = null;
 
 function scoreShareData() {
@@ -841,21 +828,52 @@ function scoreShareData() {
 }
 
 async function shareScore() {
-	if (shareInProgress) return;
+	openScoreShareDialog();
+	await prepareScoreCard();
+}
+
+async function prepareScoreCard() {
+	const request = ++scoreCardRequest;
+	const shareButton = document.getElementById("share-image-btn");
+	const download = document.getElementById("download-score-btn");
+	const preview = document.getElementById("score-card-preview");
+	const status = document.getElementById("share-status");
+	shareButton.disabled = true;
+	download.classList.add("hidden");
+	preview.classList.add("hidden");
+	if (scoreCard) { URL.revokeObjectURL(scoreCard.url); scoreCard = null; }
+	status.textContent = "Making your score card…";
 	const data = scoreShareData();
-	if (typeof navigator.share === "function") {
-		shareInProgress = true;
-		try {
-			await navigator.share(data);
-			return;
-		} catch (error) {
-			// Cancelling the system sheet is intentional, not a clipboard request.
-			if (error.name === "AbortError") return;
-		} finally {
-			shareInProgress = false;
-		}
+	const run = lastRun || { score: Math.floor(state.score), coins: state.coins, characterId: getSelectedSkin(), name: currentUsername || "A player", url: data.url };
+	try {
+		const blob = await renderScoreCard(run);
+		if (request !== scoreCardRequest) return;
+		const file = typeof File === "function" ? new File([blob], `super-hopper-${run.score}.png`, { type: "image/png" }) : null;
+		scoreCard = { url: URL.createObjectURL(blob), file, data };
+		preview.src = scoreCard.url;
+		preview.classList.remove("hidden");
+		download.href = scoreCard.url;
+		download.download = `super-hopper-${run.score}.png`;
+		download.classList.remove("hidden");
+		let supported = false;
+		try { supported = !!(file && navigator.share && navigator.canShare?.({ files: [file] })); } catch { /* download remains available */ }
+		shareButton.disabled = !supported;
+		status.textContent = supported ? "Your card is ready. Share the image or save it for later." : "Download your card or long-press the image to save, then attach it in your favourite app.";
+	} catch {
+		if (request === scoreCardRequest) status.textContent = "The image could not be created. You can still copy your score below, or close and try again.";
 	}
-	openScoreShareDialog(data);
+}
+
+async function shareScoreImage() {
+	if (shareInProgress || !scoreCard?.file) return;
+	shareInProgress = true;
+	try {
+		// The file is prepared before this click, preserving the user activation.
+		await navigator.share({ title: scoreCard.data.title, text: `${scoreCard.data.text}\n${scoreCard.data.url}`, files: [scoreCard.file] });
+		document.getElementById("share-status").textContent = "Score image shared!";
+	} catch (error) {
+		if (error?.name !== "AbortError") document.getElementById("share-status").textContent = "This app could not share the image. Use Download Image and attach it manually.";
+	} finally { shareInProgress = false; }
 }
 
 function openScoreShareDialog(data = scoreShareData()) {
@@ -867,10 +885,12 @@ function openScoreShareDialog(data = scoreShareData()) {
 	document.getElementById("share-whatsapp").href = `https://wa.me/?text=${encodeURIComponent(text)}`;
 	document.getElementById("share-x").href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(data.text)}&url=${encodeURIComponent(data.url)}`;
 	overlay.classList.remove("hidden");
-	document.getElementById("copy-score-btn").focus();
+	document.getElementById("close-share-btn").focus();
 }
 
 function closeScoreShareDialog() {
+	scoreCardRequest++;
+	if (scoreCard) { URL.revokeObjectURL(scoreCard.url); scoreCard = null; }
 	document.getElementById("share-overlay").classList.add("hidden");
 	shareDialogReturnFocus?.focus();
 }
@@ -897,12 +917,13 @@ async function copyScore() {
 function initScoreShareHandlers() {
 	const overlay = document.getElementById("share-overlay");
 	document.getElementById("copy-score-btn").addEventListener("click", copyScore);
+	document.getElementById("share-image-btn").addEventListener("click", shareScoreImage);
 	document.getElementById("close-share-btn").addEventListener("click", closeScoreShareDialog);
 	overlay.addEventListener("click", e => { if (e.target === overlay) closeScoreShareDialog(); });
 	overlay.addEventListener("keydown", e => {
 		if (e.key === "Escape") { e.preventDefault(); closeScoreShareDialog(); }
 		if (e.key !== "Tab") return;
-		const focusable = [...overlay.querySelectorAll("textarea,button,a[href]")];
+		const focusable = [...overlay.querySelectorAll("textarea,button,a[href],summary")].filter(el => !el.disabled && el.getClientRects().length > 0);
 		const first = focusable[0], last = focusable[focusable.length - 1];
 		if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
 		else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
@@ -1136,9 +1157,19 @@ function init() {
 	// Shop & Badges buttons
 	const shopBtnInit = document.getElementById("shop-btn");
 	if (shopBtnInit) shopBtnInit.addEventListener("click", openShop);
+	document.getElementById("shop-btn-go").addEventListener("click", openShop);
+	document.getElementById("selected-character-name").textContent = SKINS.find(c => c.id === getSelectedSkin()).name;
 	const closeShopInit = document.getElementById("close-shop-btn");
 	if (closeShopInit) closeShopInit.addEventListener("click", closeShop);
 	const shopOvl = document.getElementById("shop-overlay");
+	if (shopOvl) shopOvl.addEventListener("keydown", (e) => {
+		if (e.key === "Escape") { e.preventDefault(); closeShop(); }
+		if (e.key !== "Tab") return;
+		const buttons = [...shopOvl.querySelectorAll("button:not(:disabled)")];
+		const first = buttons[0], last = buttons[buttons.length - 1];
+		if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+		else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+	});
 	if (shopOvl) shopOvl.addEventListener("click", (e) => {
 		if (e.target === shopOvl) closeShop();
 	});
@@ -1194,12 +1225,11 @@ function createPlayer() {
 	if (player) { disposeOwnedObject(player); scene.remove(player); }
 	const group = new THREE.Group();
 	const skin = SKINS.find(s => s.id === getSelectedSkin()) || SKINS[0];
-	const skinIndex = SKINS.indexOf(skin);
 	const geo = getCachedGeos();
 	const coat = new THREE.MeshStandardMaterial({ color: skin.color, roughness: 0.65, flatShading: true });
 	const ink = new THREE.MeshStandardMaterial({ color: 0x202437, roughness: 0.8 });
 	const cream = new THREE.MeshStandardMaterial({ color: 0xfff8e8, roughness: 0.8 });
-	const accent = new THREE.MeshStandardMaterial({ color: skinIndex % 2 ? 0xffe448 : 0xff70b8, roughness: 0.65 });
+	const accent = new THREE.MeshStandardMaterial({ color: skin.accent, roughness: 0.65 });
 	const eye = new THREE.MeshBasicMaterial({ color: 0x141827 });
 	function part(geometry, material, x, y, z, sx = 1, sy = 1, sz = 1, parent = group) {
 		const mesh = new THREE.Mesh(geometry, material);
@@ -1209,19 +1239,38 @@ function createPlayer() {
 		parent.add(mesh);
 		return mesh;
 	}
-	// Hoodie, oversized head, contrasting muzzle and expressive ears.
+	// Shared rig and collision dimensions; species change the model, not the abilities.
 	part(geo.characterBody, coat, 0, 0.48, 0, 1, 1, 0.85);
-	part(geo.rounded, coat, 0, 0.99, 0.03, 0.43, 0.38, 0.35);
-	part(geo.rounded, cream, 0, 0.89, 0.3, 0.27, 0.16, 0.09);
-	for (const side of [-1, 1]) {
-		const pointed = skinIndex % 3 === 2;
-		const ear = part(pointed ? geo.obstacleCone : geo.rounded, coat, side * 0.26, 1.39, 0.01, pointed ? 0.38 : 0.115, pointed ? 0.4 : skinIndex % 3 === 1 ? 0.14 : 0.29, pointed ? 0.3 : 0.1);
-		ear.rotation.z = side * -0.2;
-		part(geo.rounded, accent, side * 0.26, 1.4, 0.095, 0.055, pointed ? 0.1 : skinIndex % 3 === 1 ? 0.07 : 0.19, 0.025);
-		part(geo.rounded, eye, side * 0.17, 1.035, 0.342, 0.052, 0.077, 0.025);
-		part(geo.rounded, cream, side * 0.17 - 0.012, 1.065, 0.365, 0.017, 0.021, 0.01);
+	if (skin.species === "robot") {
+		part(geo.unitBox, coat, 0, 1.03, 0.03, 0.8, 0.64, 0.64);
+		part(geo.unitBox, ink, 0, 1.04, 0.365, 0.65, 0.24, 0.035);
+		for (const side of [-1, 1]) part(geo.unitBox, cream, side * 0.17, 1.05, 0.39, 0.13, 0.08, 0.025);
+		part(geo.unitBox, ink, 0, 1.43, 0.03, 0.04, 0.2, 0.04);
+		part(geo.rounded, accent, 0, 1.56, 0.03, 0.08, 0.08, 0.08);
+	} else if (skin.species === "astronaut") {
+		part(geo.rounded, cream, 0, 1.04, 0.03, 0.47, 0.43, 0.41);
+		part(geo.rounded, ink, 0, 1.07, 0.28, 0.37, 0.29, 0.19);
+		part(geo.unitBox, accent, -0.15, 1.19, 0.449, 0.19, 0.04, 0.035);
+		for (const side of [-1,1]) part(geo.rounded, coat, side * 0.46, 1.03, 0.03, 0.09, 0.14, 0.14);
+		part(geo.unitBox, cream, 0, 0.56, -0.29, 0.44, 0.45, 0.23);
+	} else {
+		part(geo.rounded, coat, 0, 0.99, 0.03, 0.43, 0.38, 0.35);
+		part(geo.rounded, cream, 0, 0.89, 0.3, 0.27, 0.16, 0.09);
+		for (const side of [-1, 1]) {
+			const pointed = ["fox", "cat"].includes(skin.species);
+			const ear = part(pointed ? geo.obstacleCone : geo.rounded, coat, side * 0.26, 1.39, 0.01, pointed ? 0.38 : 0.115, pointed ? 0.4 : skin.species === "bear" ? 0.14 : 0.29, pointed ? 0.3 : 0.1);
+			ear.rotation.z = side * -0.2;
+			part(geo.rounded, accent, side * 0.26, 1.4, 0.095, 0.055, pointed ? 0.1 : skin.species === "bear" ? 0.07 : 0.19, 0.025);
+			part(geo.rounded, eye, side * 0.17, 1.035, 0.342, 0.052, 0.077, 0.025);
+			part(geo.rounded, cream, side * 0.17 - 0.012, 1.065, 0.365, 0.017, 0.021, 0.01);
+		}
+		part(geo.rounded, eye, 0, 0.93, 0.4, 0.05, 0.035, 0.025);
+		if (["fox", "cat"].includes(skin.species)) {
+			const tail = part(geo.rounded, coat, 0, 0.43, -0.38, skin.species === "fox" ? 0.18 : 0.07, 0.12, 0.32);
+			tail.rotation.x = -0.45;
+			if (skin.species === "fox") part(geo.rounded, cream, 0, 0.56, -0.64, 0.14, 0.1, 0.12);
+		}
 	}
-	part(geo.rounded, eye, 0, 0.93, 0.4, 0.05, 0.035, 0.025);
 	// A cross-body bag adds a contrasting detail at game scale.
 	// Back seam and a small hoodie patch remain visible from the chase camera.
 	part(geo.unitBox, cream, 0, 0.53, -0.28, 0.13, 0.16, 0.025);
@@ -1244,6 +1293,7 @@ function createPlayer() {
 		limbs.push({ arm, leg, side });
 	}
 	group.userData.limbs = limbs;
+	group.userData.characterId = skin.id;
 	// The track extends along negative Z; the camera follows from positive Z.
 	group.rotation.y = Math.PI;
 	scene.add(group);
@@ -1654,6 +1704,7 @@ function gameOver() {
 	if (uiCombo) uiCombo.classList.add("hidden");
 
 	const finalScore = Math.floor(state.score);
+	lastRun = { score: finalScore, coins: state.coins, characterId: player?.userData.characterId || getSelectedSkin(), name: currentUsername || "A player", url: scoreShareData().url };
 	elScoreFinal.innerText = finalScore;
 	elFinalCoins.innerText = state.coins;
 
@@ -1670,8 +1721,7 @@ function gameOver() {
 	saveCoinBank(getCoinBank() + state.coins);
 	updateBankDisplay();
 
-	// Check for new skin unlocks
-	checkSkinUnlocks(finalScore);
+	// Characters are bought with banked coins; scores never bypass the shop.
 
 	// Check achievements
 	checkAchievements();
