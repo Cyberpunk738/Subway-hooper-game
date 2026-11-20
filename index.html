@@ -13,7 +13,7 @@
 	<meta name="theme-color" content="#21f14f" />
 </head>
 
-<body>
+<body class="loading" aria-busy="true">
 	<div id="game-container"></div>
 
 
@@ -49,7 +49,7 @@
 	<!-- Shop Overlay -->
 	<div id="shop-overlay" class="hidden">
 		<div id="shop-panel" role="dialog" aria-modal="true" aria-labelledby="shop-title">
-			<p class="eyebrow">MEET YOUR NEXT MAIN</p><h2 id="shop-title">CHARACTER SHOP</h2>
+			<button id="close-shop-top" class="hub-close" aria-label="Close character shop">CLOSE</button><p class="eyebrow">MEET YOUR NEXT MAIN</p><h2 id="shop-title">CHARACTER SHOP</h2>
 			<p id="shop-coins">🪙 <span id="shop-coin-count">0</span></p>
 			<p id="shop-status" role="status" aria-live="polite"></p>
    <div class="shop-tabs" role="tablist" aria-label="Shop section"><button id="shop-tab-characters" role="tab" aria-selected="true" aria-controls="character-section">CHARACTERS + OUTFITS</button><button id="shop-tab-boards" role="tab" aria-selected="false" aria-controls="board-section">BOARDS</button></div>
@@ -85,7 +85,7 @@
 
  <div id="profile-overlay" class="hidden feature-overlay">
   <section class="feature-panel hub-panel" role="dialog" aria-modal="true" aria-labelledby="profile-title">
-   <p class="eyebrow">YOUR RUNNER STORY</p><h2 id="profile-title">PLAYER PROFILE</h2><p class="feature-note">Saved on this device · works offline</p>
+   <button id="close-profile-top" class="hub-close" aria-label="Close profile">CLOSE</button><p class="eyebrow">YOUR RUNNER STORY</p><h2 id="profile-title">PLAYER PROFILE</h2><p class="feature-note">Saved on this device · works offline</p>
    <div class="profile-identity"><img id="profile-avatar" alt="Your equipped character"/><div><label for="profile-name">Runner name</label><input id="profile-name" maxlength="16" autocomplete="nickname"/><button id="save-profile-btn">SAVE NAME</button><p id="profile-crew"></p></div></div>
    <p id="profile-status" role="status"></p><div id="profile-stats" class="profile-stats"></div>
    <section class="box-cabinet"><h3>MYSTERY BOX COLLECTION</h3><p>Collect the purple gift boxes on the track. Open them here after a run.</p><button id="open-box-btn">OPEN MYSTERY BOX</button><p id="profile-opened"></p><p class="box-odds">Rewards: 70% +40 coins · 25% +100 coins · 5% random character. A duplicate character converts to 150 coins. No paid boxes.</p><div id="box-result" role="status" aria-live="polite"></div></section>
@@ -96,7 +96,7 @@
  </div>
  <div id="settings-overlay" class="hidden feature-overlay">
   <section class="feature-panel hub-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-   <p class="eyebrow">MAKE IT FEEL RIGHT</p><h2 id="settings-title">SETTINGS</h2>
+   <button id="close-settings-top" class="hub-close" aria-label="Close settings">CLOSE</button><p class="eyebrow">MAKE IT FEEL RIGHT</p><h2 id="settings-title">SETTINGS</h2>
    <label class="setting-row">Mute all audio<input id="setting-muted" type="checkbox"/></label>
    <label class="setting-row">Background music<input id="setting-music" type="checkbox"/></label>
    <label class="setting-row">Sound effects<input id="setting-effects" type="checkbox"/></label>
@@ -176,7 +176,7 @@
 			<p class="selected-character">RUNNING WITH <b id="selected-character-name">HOP</b></p>
 			<div id="coin-bank-display">🪙 <span id="bank-coins">0</span></div>
 			 <p id="graphics-status" class="hidden" role="alert">3D graphics are unavailable in this browser. Try a browser with WebGL enabled. Your profile, shop and settings are still available.</p>
-			<button id="start-btn">LET’S PLAY</button>
+			<button id="start-btn" disabled>LET’S PLAY</button>
 			<div class="screen-btn-row">
 
 				<button id="shop-btn">CHARACTERS + BOARDS</button>

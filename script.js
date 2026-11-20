@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { bindSwipeControls } from "./controls.js";
 import { createGameAudio } from "./audio.js";
 import { exportProgress, parseProgress, MAX_BACKUP_BYTES } from "./save-data.js";
 import { dressRunner, animateRunnerDetails } from "./character-details.js";
@@ -40,7 +41,7 @@ const MILESTONES = [
 	{ score: 10000, label: "10KM!" }
 ];
 
-// Legacy IDs are retained for existing owners. All new unlocks cost coins.
+// Legacy IDs preserve ownership. Characters are cosmetic and can be bought or earned.
 const SKINS = CHARACTERS;
 
 // --- ACHIEVEMENTS ---
@@ -646,6 +647,7 @@ function updateStreakDisplay() {
 function updateBankDisplay() {
 	const el = document.getElementById("bank-coins");
 	if (el) el.textContent = getCoinBank();
+ document.getElementById("selected-character-name").textContent=SKINS.find(c=>c.id===getSelectedSkin()).name;
 }
 
 // =============================================
@@ -1360,7 +1362,7 @@ function createDistrictScenery(index) {
 }
 function requestRescue() {
  if(state.rescueUsed){gameOver();return;}
- rescuePending=true;paused=true;gesture=null;jumpBuffer=0;stopMusic();flushDistanceMission();
+ rescuePending=true;paused=true;cancelSwipe();jumpBuffer=0;stopMusic();flushDistanceMission();
  const overlay=document.getElementById('rescue-overlay');overlay.classList.remove('hidden');
  const button=document.getElementById('rescue-btn');button.disabled=getCoinBank()<RESCUE_COST;
  document.getElementById('rescue-balance').textContent=`${getCoinBank()} banked coins · rescue costs ${RESCUE_COST}. Run coins bank when you finish.`;
@@ -1410,7 +1412,7 @@ function initRunnerFeatures() {
 // Player hub, earned rewards and preferences all persist on this device.
 const SETTINGS_KEY='super_hopper_settings_v1';
 let preferences=null,pursuer=null,hubReturnFocus=null;
-let graphicsUnavailable=false,captureTicks=0,pendingRestore=null;
+let graphicsUnavailable=false,captureTicks=0,pendingRestore=null,restoreRead=0;
 function getPreferences(){
  if(preferences)return preferences;
  let saved;try{saved=JSON.parse(localStorage.getItem(SETTINGS_KEY));}catch{}
@@ -1451,9 +1453,13 @@ function openHub(which){
  hubReturnFocus=document.activeElement;
  if(which==='profile')renderProfile();else fillSettings();
  const overlay=document.getElementById(which+'-overlay');overlay.classList.remove('hidden');overlay.querySelector('.hub-panel').scrollTop=0;
- document.getElementById('close-'+which+'-btn').focus({preventScroll:true});
+ document.getElementById('close-'+which+'-top').focus({preventScroll:true});
 }
-function closeHub(which){document.getElementById(which+'-overlay').classList.add('hidden');hubReturnFocus?.focus({preventScroll:true});}
+function closeHub(which){
+ document.getElementById(which+'-overlay').classList.add('hidden');
+ if(which==='profile'){restoreRead++;pendingRestore=null;document.getElementById('restore-progress-btn').disabled=true;document.getElementById('restore-file').value='';document.getElementById('backup-status').textContent='';}
+ hubReturnFocus?.focus({preventScroll:true});
+}
 function renderProfile(){
  const wallet=readWallet(),p=wallet.profile,character=SKINS.find(c=>c.id===wallet.selected);
  document.getElementById('profile-name').value=currentUsername||getSavedUsername()||'Runner';
@@ -1526,15 +1532,17 @@ function downloadProgress(){
  }catch{document.getElementById('backup-status').textContent='Could not create a backup in this browser.';}
 }
 async function previewProgressFile(event){
+ const request=++restoreRead;
  pendingRestore=null;document.getElementById('restore-progress-btn').disabled=true;
  const file=event.target.files?.[0];if(!file)return;
  try{
   if(file.size>MAX_BACKUP_BYTES)throw new Error('Choose a progress file smaller than 200 KB.');
-  pendingRestore=parseProgress(await file.text(),SKINS,BOARDS,OUTFITS,DISTRICTS);
+  const text=await file.text();if(request!==restoreRead)return;
+  pendingRestore=parseProgress(text,SKINS,BOARDS,OUTFITS,DISTRICTS);
   const current=readWallet();
   document.getElementById('backup-status').textContent=`Ready to restore: ${pendingRestore.bank} coins, ${pendingRestore.owned.length} characters, ${pendingRestore.profile.runs} recorded runs. Current: ${current.bank} coins, ${current.owned.length} characters. Restoring replaces this device’s wallet. Download your current backup first if you want to keep it.`;
   document.getElementById('restore-progress-btn').disabled=false;
- }catch(error){document.getElementById('backup-status').textContent=error.message;}
+ }catch(error){if(request===restoreRead)document.getElementById('backup-status').textContent=error.message;}
 }
 function restoreProgress(){
  if(!pendingRestore||state.isPlaying)return false;
@@ -1551,6 +1559,7 @@ function initPlayerHub(){
  for(const page of ['profile','settings']){
   for(const id of [page+'-btn',page+'-btn-go'])document.getElementById(id).addEventListener('click',()=>openHub(page));
   document.getElementById('close-'+page+'-btn').addEventListener('click',()=>closeHub(page));
+  document.getElementById('close-'+page+'-top').addEventListener('click',()=>closeHub(page));
   document.getElementById(page+'-overlay').addEventListener('click',e=>{if(e.target.id===page+'-overlay')closeHub(page);});
   document.getElementById(page+'-overlay').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeHub(page);}if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary')],first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
  }
@@ -1652,6 +1661,7 @@ function init() {
 	document.getElementById("selected-character-name").textContent = SKINS.find(c => c.id === getSelectedSkin()).name;
 	const closeShopInit = document.getElementById("close-shop-btn");
 	if (closeShopInit) closeShopInit.addEventListener("click", closeShop);
+ document.getElementById("close-shop-top").addEventListener("click",closeShop);
 	const shopOvl = document.getElementById("shop-overlay");
 	if (shopOvl) shopOvl.addEventListener("keydown", (e) => {
 		if (e.key === "Escape") { e.preventDefault(); closeShop(); }
@@ -1697,6 +1707,8 @@ function init() {
 		// First visit — show username modal
 		showUsernameModal();
 	}
+ document.getElementById('start-btn').disabled=graphicsUnavailable;
+ document.body.classList.remove('loading');document.body.setAttribute('aria-busy','false');
 }
 
 function onWindowResize() {
@@ -2116,7 +2128,7 @@ function startGame() {
 	jumpBuffer = 0;
 	paused = false;
 	deathTicks = 0;
-	gesture = null;
+	cancelSwipe();
 	document.body.classList.add("running");
 	document.getElementById("pause-screen").classList.add("hidden");
 	document.getElementById("pause-btn").classList.remove("hidden");
@@ -2304,7 +2316,7 @@ let rescuePending = false;
 let celebrationTicks = 0;
 let jumpBuffer = 0;
 let paused = false;
-let gesture = null;
+let cancelSwipe = ()=>{};
 let swipeThreshold = Number(localStorage.getItem("hopper_sensitivity")) || 14;
 function moveLane(direction) {
 	if (state.isPlaying && !paused && !state.countdownTicks) state.lane = Math.max(-1, Math.min(1, state.lane + direction));
@@ -2333,31 +2345,10 @@ function handleInput(e) {
 	else requestJump();
 }
 function initTouchControls() {
-	const el = document.getElementById("game-container");
-	el.addEventListener("pointerdown", e => {
-		if (!state.isPlaying || paused || !e.isPrimary) return;
-		gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, used: false, started: performance.now() };
-		el.setPointerCapture(e.pointerId);
-	});
-	el.addEventListener("pointermove", e => {
-		if (!gesture || gesture.id !== e.pointerId || gesture.used || paused) return;
-		const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
-		if (Math.max(Math.abs(dx), Math.abs(dy)) < swipeThreshold) return;
-		gesture.used = true;
-		if (Math.abs(dx) > Math.abs(dy)) moveLane(Math.sign(dx));
-		else if (dy < 0) requestJump();
-	});
-	el.addEventListener("pointerup", e => {
-		if (!gesture || gesture.id !== e.pointerId) return;
-		if (!gesture.used) {
-   const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
-   if(Math.max(Math.abs(dx),Math.abs(dy))>=swipeThreshold){if(Math.abs(dx)>Math.abs(dy))moveLane(Math.sign(dx));else if(dy<0)requestJump();}
-   else if(performance.now()-gesture.started<300)requestJump();
-  }
-		gesture = null;
-	});
-	el.addEventListener("pointercancel", () => { gesture = null; });
-	el.addEventListener("lostpointercapture", () => { gesture = null; });
+ cancelSwipe=bindSwipeControls(document.getElementById('game-container'),{
+  active:()=>state.isPlaying&&!paused&&!state.countdownTicks,
+  threshold:()=>swipeThreshold,move:moveLane,jump:requestJump,now:()=>performance.now()
+ });
 }
 function initMobileButtons() {
 	for (const [id, action] of [["mobile-left", () => moveLane(-1)], ["mobile-right", () => moveLane(1)], ["mobile-jump", requestJump]]) {
@@ -2371,7 +2362,7 @@ function togglePause(force) {
 	if (!state.isPlaying || rescuePending) return;
 	if (force === true) flushDistanceMission();
 	paused = typeof force === "boolean" ? force : !paused;
-	gesture = null;
+	cancelSwipe();
 	jumpBuffer = 0;
 	document.getElementById("pause-screen").classList.toggle("hidden", !paused);
 	document.getElementById("pause-btn").textContent = paused ? "▶" : "Ⅱ";

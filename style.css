@@ -1257,3 +1257,8 @@ button:disabled { cursor:default; opacity:.55; transform:none; box-shadow:none; 
 .rarity-chip {font-size:11px!important;}.character-card .character-price {font-size:13px;}
 @media(max-width:600px){#start-screen .screen-btn-row {grid-template-columns:1fr 1fr;gap:10px;width:min(360px,100%);margin:20px 0 8px;}#start-screen .screen-btn-row button {font-size:13px;padding:13px 10px;}.profile-stats {grid-template-columns:1fr 1fr;}.profile-links {gap:8px;}.profile-links button {font-size:12px;}.result-actions {gap:8px;}.result-actions button {font-size:12px;padding:12px 10px;}.setting-row {flex-wrap:wrap;}.hub-panel .setting-row select {max-width:165px;}.profile-identity {grid-template-columns:80px minmax(0,1fr);}.profile-identity img {width:80px;}.profile-identity input {max-width:100%;}.play-tips {margin-top:18px;}.play-tips span {font-size:11px;}}
 @media(max-width:600px) and (max-height:720px){#start-screen {padding-top:95px;}.title {font-size:clamp(52px,15vw,78px);}.hopper-mascot {display:none;}#start-screen .subtitle {font-size:15px;margin-bottom:12px;}#start-screen .screen-btn-row {margin-top:16px;}}
+
+.hub-close {position:sticky;top:0;float:right;z-index:5;font:700 12px var(--pixel-font)!important;padding:9px 12px!important;min-height:40px;border-radius:10px;background:var(--paper);margin:0 0 8px 8px!important;}
+@media(max-width:600px){body:not(.running) #mute-btn {top:82px;right:16px;bottom:auto;width:36px;height:36px;padding:6px;font-size:18px;}}
+
+.loading #ui-layer button,.loading #ui-layer select {pointer-events:none;}

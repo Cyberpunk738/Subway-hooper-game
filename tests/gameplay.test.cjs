@@ -23,6 +23,8 @@ function game(storage = new Map(), THREE) {
   performance:{now:()=>100}, requestAnimationFrame(){},cancelAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
  let source = fs.readFileSync(require('node:path').join(__dirname,'../script.js'),'utf8');
+ const controls=fs.readFileSync(require('node:path').join(__dirname,'../controls.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(controls,context);
  const audio=fs.readFileSync(require('node:path').join(__dirname,'../audio.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(audio,context);
  const saves=fs.readFileSync(require('node:path').join(__dirname,'../save-data.js'),'utf8').replace(/^export /gm,'');
@@ -39,7 +41,7 @@ function game(storage = new Map(), THREE) {
  vm.runInContext(progression,context);
  const art = fs.readFileSync(require('node:path').join(__dirname,'../game-art.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(art, context);
- source = source.replace(/import \{[^\n]+\} from "\.\/audio.js";/,'').replace(/import \{[^\n]+\} from "\.\/save-data.js";/,'').replace(/import \{[^\n]+\} from "\.\/character-details.js";/,'').replace(/import \{[^\n]+\} from "\.\/chase.js";/,'').replace(/import \{[^\n]+\} from "\.\/runner-rules.js";/,'').replace(/import \{[^\n]+\} from "\.\/player-meta.js";/,'').replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
+ source = source.replace(/import \{[^\n]+\} from "\.\/controls.js";/,'').replace(/import \{[^\n]+\} from "\.\/audio.js";/,'').replace(/import \{[^\n]+\} from "\.\/save-data.js";/,'').replace(/import \{[^\n]+\} from "\.\/character-details.js";/,'').replace(/import \{[^\n]+\} from "\.\/chase.js";/,'').replace(/import \{[^\n]+\} from "\.\/runner-rules.js";/,'').replace(/import \{[^\n]+\} from "\.\/player-meta.js";/,'').replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
  vm.runInContext(source, context);
  return {run:code=>vm.runInContext(code,context),element,storage};
 }
@@ -91,8 +93,8 @@ test('frame stalls have bounded catch-up and rapid restarts keep one loop',()=>{
 });
 
 test('pause clears queued actions and resumes without elapsed-time catch-up',()=>{
- const g=game();g.run('state.isPlaying=true; isMuted=true; jumpBuffer=8; gesture={}; togglePause(true);');
- assert.equal(g.run('paused'),true);assert.equal(g.run('jumpBuffer'),0);assert.equal(g.run('gesture'),null);
+ const g=game();g.run('state.isPlaying=true; isMuted=true; jumpBuffer=8;let cancelled=0;cancelSwipe=()=>cancelled++;togglePause(true);');
+ assert.equal(g.run('paused'),true);assert.equal(g.run('jumpBuffer'),0);assert.equal(g.run('cancelled'),1);
  g.run('togglePause(false)');assert.equal(g.run('paused'),false);assert.equal(g.run('accumulator'),0);
 });
 
@@ -577,4 +579,11 @@ test('seeded maximum-speed runs can dodge through all six districts without a fo
   assert.equal(g.run('collisions'),0,`seed ${seed}`);
   assert.equal(g.run('state.visited.length'),6);
  }
+});
+
+test('closing profile invalidates an unfinished backup read',async()=>{
+ const g=game();g.run('let finishFile;let reading=previewProgressFile({target:{files:[{size:4,text:()=>new Promise(resolve=>finishFile=resolve)}]}});closeHub("profile");finishFile("oops");');
+ await g.run('reading');
+ assert.equal(g.run('pendingRestore'),null);assert.equal(g.element('restore-progress-btn').disabled,true);
+ assert.equal(g.element('backup-status').textContent,'');
 });
