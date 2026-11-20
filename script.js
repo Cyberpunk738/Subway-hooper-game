@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { TRACK_SPAWN_Z, OPENING_ROWS, rowSpacing, planObstacleRow, sweptObstacleHit, FIRST_BOX_DISTANCE, nextMysteryDistance } from "./runner-rules.js";
 import { RARITY_COLORS, normalizeSettings, normalizeProfile, recordRun, mysteryReward, redeemMysteryBox } from "./player-meta.js";
 import { JETPACK_SPACING, jetpackReady, OUTFITS, BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
 import { CHARACTERS, portraitSVG, renderScoreCard } from "./game-art.js";
@@ -1235,7 +1236,7 @@ function endFlight(safeLanding=true) {
 
 // --- MISSIONS, SKATING, DISTRICTS AND RESCUE ---
 function freshRunFeatures() {
- return {nextBoxDistance:350,boxesCollected:0,chaseTicks:0,visited:[DISTRICTS[0].pattern],distance:0,pendingDistance:0,districtIndex:0,safeLane:0,runTicks:0,
+ return {nextBoxDistance:FIRST_BOX_DISTANCE,boxesCollected:0,chaseTicks:0,visited:[DISTRICTS[0].pattern],distance:0,pendingDistance:0,districtIndex:0,safeLane:0,runTicks:0,
   dangerChain:0,dangerTimer:0,boardTicks:0,boardSpawnRows:11,
  flightTicks:0,flightLanding:false,nextJetpackDistance:JETPACK_SPACING,flightPath:0,
   jumpTicks:0,tricks:0,rescueUsed:false,countdownTicks:0,invulnerableTicks:0};
@@ -1474,6 +1475,7 @@ function initRunnerFeatures() {
 // Player hub, earned rewards and preferences all persist on this device.
 const SETTINGS_KEY='super_hopper_settings_v1';
 let preferences=null,pursuer=null,hubReturnFocus=null;
+let graphicsUnavailable=false;
 function getPreferences(){
  if(preferences)return preferences;
  let saved;try{saved=JSON.parse(localStorage.getItem(SETTINGS_KEY));}catch{}
@@ -1604,13 +1606,19 @@ function init() {
 	);
 	camera.lookAt(0, 0, -5);
 
-	// Renderer
-	renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice() ? 1.5 : 2));
-	renderer.setSize(window.innerWidth, window.innerHeight);
-	renderer.shadowMap.enabled = !isTouchDevice();
-	renderer.shadowMap.type = THREE.PCFShadowMap;
-	document.getElementById("game-container").appendChild(renderer.domElement);
+ // Menus and saved progress remain accessible when GPU creation fails.
+ try {
+  renderer = new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:'high-performance'});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,isTouchDevice()?1.5:2));
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.shadowMap.enabled=!isTouchDevice();renderer.shadowMap.type=THREE.PCFShadowMap;
+  document.getElementById('game-container').appendChild(renderer.domElement);
+  renderer.domElement.addEventListener('webglcontextlost',event=>{event.preventDefault();togglePause(true);document.getElementById('graphics-status').textContent='Graphics were interrupted. Reload the game to reconnect. Saved progress is kept.';document.getElementById('graphics-status').classList.remove('hidden');});
+ } catch {
+  renderer=null;graphicsUnavailable=true;
+  document.getElementById('graphics-status').classList.remove('hidden');
+  document.getElementById('start-btn').disabled=true;
+ }
 
 	// Lights
 	const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -1624,7 +1632,7 @@ function init() {
 	scene.add(dirLight);
 
 	// Initial Render
-	renderer.render(scene, camera);
+	if(renderer)renderer.render(scene, camera);
 
 	// Resize Handler
 	window.addEventListener("resize", onWindowResize, false);
@@ -1720,7 +1728,7 @@ function init() {
 function onWindowResize() {
 	camera.aspect = window.innerWidth / window.innerHeight;
 	camera.updateProjectionMatrix();
-	renderer.setSize(window.innerWidth, window.innerHeight);
+	if(renderer)renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 // --- GAME LOGIC ---
@@ -2017,7 +2025,7 @@ let spawnTimer = 0;
 let lastObstacleLane = -99;
 let powerupSpawnCounter = 0;
 
-function spawnRow(zStart = -60) {
+function spawnRow(zStart = TRACK_SPAWN_Z) {
 
 	// Left Decor
 	if (Math.random() > 0.3) {
@@ -2035,16 +2043,10 @@ function spawnRow(zStart = -60) {
 		worldObjects.push({ mesh: dR, type: "decor" });
 	}
 
-	let obstacleLane = null;
-	let blocked = [];
-	if (Math.random() > 0.2) {
-		let lane = Math.floor(Math.random() * 3) - 1;
-		if (state.districtIndex === 1) {
-			const candidates = [-1,0,1].filter(n => Math.abs(n - state.safeLane) <= 1);
-			state.safeLane = candidates[Math.floor(Math.random() * candidates.length)];
-			blocked = [-1,0,1].filter(n => n !== state.safeLane);
-		} else blocked = [lane];
-		obstacleLane = blocked[0];
+ const planned = planObstacleRow(state.safeLane,state.districtIndex,state.distance);
+ state.safeLane = planned.safeLane;
+ const blocked = planned.blocked;
+ if (blocked.length) {
 		for (const blockedLane of blocked) {
 			const kind = state.districtIndex === 2 ? 0 : state.districtIndex === 3 || state.districtIndex === 5 ? 2 : state.districtIndex === 4 ? 1 : Math.floor(Math.random() * 3);
 			const obs = createObstacleMesh(kind);
@@ -2090,14 +2092,14 @@ function spawnRow(zStart = -60) {
  if(state.flightTicks>100)spawnAirCoins(zStart);
 
  if(state.distance>=state.nextBoxDistance&&!state.flightTicks&&!state.flightLanding&&!worldObjects.some(obj=>obj.type==='mystery')){
-  state.nextBoxDistance=state.distance+900;
+  state.nextBoxDistance=nextMysteryDistance(state.distance);
   const box=createMysteryBox();box.position.set(([-1,0,1].find(l=>!blocked.includes(l)))*CONFIG.laneWidth,1.1,zStart-2);scene.add(box);worldObjects.push({mesh:box,type:'mystery'});
  }
 
 }
 
 function startGame() {
-	if (state.isPlaying) return;
+	if (state.isPlaying || graphicsUnavailable) return;
 
 	// Unlock audio context on game start
 	ensureAudio();
@@ -2238,7 +2240,7 @@ function startGame() {
 	particles.forEach((p) => { p.mesh.material.dispose(); scene.remove(p.mesh); });
 	particles = [];
 
-	for (let z = -22; z >= -60; z -= 15) spawnRow(z);
+	for (const z of OPENING_ROWS) spawnRow(z);
 
 	startPursuer();
 	// A single animation loop owns simulation, rendering and death effects.
@@ -2367,7 +2369,11 @@ function initTouchControls() {
 	});
 	el.addEventListener("pointerup", e => {
 		if (!gesture || gesture.id !== e.pointerId) return;
-		if (!gesture.used && performance.now() - gesture.started < 300) requestJump();
+		if (!gesture.used) {
+   const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
+   if(Math.max(Math.abs(dx),Math.abs(dy))>=swipeThreshold){if(Math.abs(dx)>Math.abs(dy))moveLane(Math.sign(dx));else if(dy<0)requestJump();}
+   else if(performance.now()-gesture.started<300)requestJump();
+  }
 		gesture = null;
 	});
 	el.addEventListener("pointercancel", () => { gesture = null; });
@@ -2448,6 +2454,7 @@ function updateGame() {
 		if (!state.countdownTicks) startMusic();
 		return;
 	}
+	const previousPlayer = { x:state.currentLaneX, y:state.playerY + 0.05 };
 	updateRunFeatures();
 	simulationTime += STEP_MS;
 	_frameNow = simulationTime;
@@ -2528,15 +2535,17 @@ function updateGame() {
 
 	// Spawn World
 	spawnTimer += state.speed;
-	if (spawnTimer >= 7.5) {
+	if (spawnTimer >= rowSpacing(state.speed) / 2) {
 		spawnRow();
-		spawnTimer -= 7.5;
+		spawnTimer -= rowSpacing(state.speed) / 2;
 	}
 
-	// Move World Objects
+	// Move every object before resolving collisions, so rescue cannot leave half
+ // the world one simulation tick behind the other half.
+ for(const obj of worldObjects){obj.previousZ=obj.mesh.position.z;obj.mesh.position.z+=state.speed*2;}
+ // Resolve World Objects
 	for (let i = worldObjects.length - 1; i >= 0; i--) {
 		const obj = worldObjects[i];
-		obj.mesh.position.z += state.speed * 2;
 
 		// Spin coins & powerups
 		if (obj.type === "coin") {
@@ -2551,12 +2560,10 @@ function updateGame() {
 		// Collision Detection — Obstacles
 		if (obj.type === "obstacle") {
 			const hitbox = obj.mesh.userData?.hitbox || { halfWidth: 0.8, halfDepth: 0.8, height: 0.95 };
-			if (Math.abs(obj.mesh.position.z) < hitbox.halfDepth) {
-				const dx = Math.abs(player.position.x - obj.mesh.position.x);
-				// Match clearance to the new runner’s feet, rather than its visual origin.
-				const feetClearObstacle = state.playerY + 0.05 >= hitbox.height;
+   const from={x:previousPlayer.x-obj.mesh.position.x,y:previousPlayer.y,z:-obj.previousZ};
+   const to={x:player.position.x-obj.mesh.position.x,y:state.playerY+0.05,z:-obj.mesh.position.z};
+   if (!state.flightTicks && !state.flightLanding && sweptObstacleHit(from,to,hitbox)) {
 
-				if (dx < hitbox.halfWidth && !feetClearObstacle && !state.flightTicks && !state.flightLanding) {
 					if (state.invulnerableTicks > 0 || state.boardTicks > 0) {
 						if (state.boardTicks > 0 && state.invulnerableTicks <= 0) { endBoard(true); state.invulnerableTicks = 75; }
 						disposeMeshMaterials(obj.mesh); scene.remove(obj.mesh); worldObjects.splice(i, 1); continue;
@@ -2581,7 +2588,6 @@ function updateGame() {
 						requestRescue();
 						return;
 					}
-				}
 			}
 		}
 

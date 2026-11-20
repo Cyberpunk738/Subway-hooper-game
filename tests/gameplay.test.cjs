@@ -23,13 +23,15 @@ function game(storage = new Map(), THREE) {
   performance:{now:()=>100}, requestAnimationFrame(){},cancelAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
  let source = fs.readFileSync(require('node:path').join(__dirname,'../script.js'),'utf8');
+ const rules=fs.readFileSync(require('node:path').join(__dirname,'../runner-rules.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(rules,context);
  const meta=fs.readFileSync(require('node:path').join(__dirname,'../player-meta.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(meta,context);
  const progression=fs.readFileSync(require('node:path').join(__dirname,'../progression.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(progression,context);
  const art = fs.readFileSync(require('node:path').join(__dirname,'../game-art.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(art, context);
- source = source.replace(/import \{[^\n]+\} from "\.\/player-meta.js";/,'').replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
+ source = source.replace(/import \{[^\n]+\} from "\.\/runner-rules.js";/,'').replace(/import \{[^\n]+\} from "\.\/player-meta.js";/,'').replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
  vm.runInContext(source, context);
  return {run:code=>vm.runInContext(code,context),element,storage};
 }
@@ -504,4 +506,14 @@ test('expanded crew, chase, six districts, earned box and final profile survive 
  assert.equal(g.run('openMysteryBox()'),true);assert.equal(g.run('readWallet().profile.opened'),1);
  g.run('startGame();');assert.equal(g.run('pursuer!==null'),true);
 
+});
+
+test('coalesced pointer release swipes dodge without accidentally jumping',()=>{
+ const g=game();g.run('state.isPlaying=true; initTouchControls();');
+ const events=g.element('game-container').listeners;
+ const down={pointerId:1,isPrimary:true,clientX:100,clientY:100};
+ events.pointerdown(down);events.pointerup({...down,clientX:125});
+ assert.equal(g.run('state.lane'),1);assert.equal(g.run('jumpBuffer'),0);
+ events.pointerdown(down);events.pointerup({...down,clientY:75});
+ assert.equal(g.run('jumpBuffer'),8);
 });
