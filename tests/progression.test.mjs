@@ -22,7 +22,7 @@ test('near miss multiplier grows gradually and is capped',()=>{
 });
 
 test('districts have distinct layouts and board designs have one free starter',()=>{
- assert.equal(new Set(DISTRICTS.map(d=>d.pattern)).size,4);
+ assert.equal(new Set(DISTRICTS.map(d=>d.pattern)).size,6);
  assert.equal(BOARDS.filter(b=>b.cost===0).length,1);
  assert.equal(new Set(BOARDS.map(b=>b.id)).size,3);
 });

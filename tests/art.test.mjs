@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {CHARACTERS,portraitSVG,scoreCardSVG,renderScoreCard} from '../game-art.js';
 
 test('roster has six distinct species with stable legacy IDs and one free character',()=>{
- assert.deepEqual(CHARACTERS.map(c=>c.id),['default','blue','gold','neon','ruby','cosmic']);
+ assert.deepEqual(CHARACTERS.slice(0,6).map(c=>c.id),['default','blue','gold','neon','ruby','cosmic']);
  assert.equal(new Set(CHARACTERS.map(c=>c.species)).size,6);
  assert.equal(CHARACTERS.filter(c=>c.cost===0).length,1);
- assert.equal(new Set(CHARACTERS.map(c=>portraitSVG(c))).size,6);
+ assert.equal(new Set(CHARACTERS.map(c=>portraitSVG(c))).size,CHARACTERS.length);
 });
 
 test('score card contains real run data, chosen character and escaped user input',()=>{

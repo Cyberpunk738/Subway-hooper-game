@@ -2,7 +2,7 @@
  "id":"./",
  "name":"Super Hopper",
  "short_name":"Hopper",
- "description":"An offline-ready endless runner. Hop, skate and fly through four districts.",
+ "description":"An offline-ready endless runner. Hop, skate and fly through six districts.",
  "start_url":"./",
  "scope":"./",
  "display":"standalone",

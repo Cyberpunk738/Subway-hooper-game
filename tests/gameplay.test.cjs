@@ -17,17 +17,19 @@ function game(storage = new Map(), THREE) {
   return elements.get(id);
  }
  const context = vm.createContext({THREE,console, Math, Date, Number, String, Set, URL, Blob, File,
-  document:{getElementById:element,querySelectorAll(){return [];},body:{classList:{add(){},remove(){}}}},
+  document:{getElementById:element,querySelectorAll(){return [];},body:{classList:{add(){},remove(){},toggle(){}}}},
   window:{location:{href:"https://hopper.example/play/?tracking=1#run"}}, navigator:{maxTouchPoints:0},
   localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},
   performance:{now:()=>100}, requestAnimationFrame(){},cancelAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
  let source = fs.readFileSync(require('node:path').join(__dirname,'../script.js'),'utf8');
+ const meta=fs.readFileSync(require('node:path').join(__dirname,'../player-meta.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(meta,context);
  const progression=fs.readFileSync(require('node:path').join(__dirname,'../progression.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(progression,context);
  const art = fs.readFileSync(require('node:path').join(__dirname,'../game-art.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(art, context);
- source = source.replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
+ source = source.replace(/import \{[^\n]+\} from "\.\/player-meta.js";/,'').replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
  vm.runInContext(source, context);
  return {run:code=>vm.runInContext(code,context),element,storage};
 }
@@ -449,4 +451,57 @@ test('interrupting a district transition disposes retired scenery without accumu
  assert.equal(g.run('retired'),1);assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),2);
  g.run('for(let i=0;i<91;i++)checkThemeTransition();');
  assert.equal(g.run('retired'),2);assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),1);
+});
+
+test('mystery boxes persist from a run and rewards cannot be opened twice',()=>{
+ const storage=new Map(),g=game(storage);g.run('showMilestone=()=>{};');
+ assert.equal(g.run('collectMysteryBox()'),true);
+ const reload=game(storage);assert.equal(reload.run('readWallet().profile.boxes'),1);
+ assert.equal(reload.run('openMysteryBox()'),true);assert.equal(reload.run('readWallet().profile.boxes'),0);
+ assert.equal(reload.run('openMysteryBox()'),false);
+});
+
+test('failed mystery reward storage leaves the earned box untouched',()=>{
+ const storage=new Map(),g=game(storage);g.run('showMilestone=()=>{};collectMysteryBox();localStorage.setItem=()=>{throw new Error("Denied")};');
+ assert.equal(g.run('openMysteryBox()'),false);
+ const reload=game(storage);assert.equal(reload.run('readWallet().profile.boxes'),1);assert.equal(reload.run('readWallet().profile.opened'),0);
+});
+
+test('settings persistence keeps progress and synchronizes existing swipe controls',()=>{
+ const storage=new Map(),g=game(storage);g.run('saveCoinBank(125);');
+ assert.equal(g.run('savePreferences({...getPreferences(),sensitivity:24,music:false,reducedMotion:true})'),true);
+ const reload=game(storage);assert.equal(reload.run('getPreferences().sensitivity'),24);assert.equal(reload.run('getPreferences().music'),false);
+ assert.equal(reload.run('getCoinBank()'),125);assert.equal(g.run('swipeThreshold'),24);
+});
+
+test('the new profile and settings overlays block background run shortcuts',()=>{
+ const g=game();g.run('let starts=0;startGame=()=>starts++;');
+ g.element('profile-overlay').classList.remove('hidden');
+ g.run('handleInput({target:{closest(){return null;}},code:"Enter",preventDefault(){}})');assert.equal(g.run('starts'),0);
+ g.element('profile-overlay').classList.add('hidden');g.element('settings-overlay').classList.remove('hidden');
+ g.run('handleInput({target:{closest(){return null;}},code:"Space",preventDefault(){}})');assert.equal(g.run('starts'),0);
+});
+
+test('expanded crew, chase, six districts, earned box and final profile survive a full run',async()=>{
+ const THREE=await import('../vendor/three.module.min.js');
+ const g=game(new Map(),THREE);
+ g.run('scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(60,1,0.1,150);camera.position.set(0,7,10);saveCoinBank(20000);isMuted=true;handleScoreSubmission=checkAchievements=showMilestone=showNearMiss=()=>{};');
+ for(const id of ['default','blue','gold','neon','ruby','cosmic','nova','titan','sol']){
+  g.run(`buyOrEquipCharacter('${id}');player=createPlayer();`);
+  assert.equal(g.run('player.userData.characterId'),id);
+  assert.ok(g.run('new THREE.Box3().setFromObject(player).getSize(new THREE.Vector3()).toArray().every(Number.isFinite)'));
+ }
+ g.run('startGame();');assert.equal(g.run('pursuer!==null'),true);
+ g.run('for(let i=0;i<180;i++)updateRunFeatures();');assert.equal(g.run('pursuer'),null);
+ for(let i=0;i<6;i++){
+  g.run(`state.distance=${i*400};enterDistrict(${i});for(let k=0;k<91;k++)checkThemeTransition();`);
+  assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),1);
+ }
+ g.run('const box=createMysteryBox();box.position.set(0,1,-0.4);scene.add(box);worldObjects.forEach(o=>{disposeMeshMaterials(o.mesh);scene.remove(o.mesh)});worldObjects=[{mesh:box,type:"mystery"}];state.playerY=0;state.isJumping=false;state.flightTicks=0;state.flightLanding=false;updateGame();');
+ assert.equal(g.run('readWallet().profile.boxes'),1);assert.equal(g.run('state.boxesCollected'),1);
+ g.run('gameOver();');assert.equal(g.run('readWallet().profile.runs'),1);assert.equal(g.run('readWallet().profile.visited.length'),6);
+ g.run('gameOver();');assert.equal(g.run('readWallet().profile.runs'),1);
+ assert.equal(g.run('openMysteryBox()'),true);assert.equal(g.run('readWallet().profile.opened'),1);
+ g.run('startGame();');assert.equal(g.run('pursuer!==null'),true);
+
 });

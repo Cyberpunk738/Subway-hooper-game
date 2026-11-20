@@ -1,12 +1,15 @@
 // Original, self-contained artwork shared by the shop and exported score cards.
 // Existing IDs preserve players' previously unlocked skins as owned characters.
 export const CHARACTERS = [
- { id: 'default', name: 'HOP', species: 'bunny', color: 0x21f14f, accent: '#ff70b8', cost: 0, tagline: 'The original street hopper.' },
- { id: 'blue', name: 'MARINA', species: 'bear', color: 0x4fc3f7, accent: '#ffe448', cost: 50, tagline: 'Cool head. Big bear energy.' },
- { id: 'gold', name: 'BOLT', species: 'fox', color: 0xffbd3b, accent: '#fff4da', cost: 100, tagline: 'A fox with a need for speed.' },
- { id: 'neon', name: 'GLITCH', species: 'robot', color: 0xb5ff40, accent: '#ac91ff', cost: 200, tagline: 'Built for one more run.' },
- { id: 'ruby', name: 'EMBER', species: 'cat', color: 0xff628d, accent: '#ffe448', cost: 300, tagline: 'Nine lives. Endless attitude.' },
- { id: 'cosmic', name: 'ORBIT', species: 'astronaut', color: 0xb797ff, accent: '#69e3ed', cost: 500, tagline: 'Out of this world.' }
+ { id: 'default', rarity:'common', name: 'HOP', species: 'bunny', color: 0x21f14f, accent: '#ff70b8', cost: 0, tagline: 'The original street hopper.' },
+ { id: 'blue', rarity:'common', name: 'MARINA', species: 'bear', color: 0x4fc3f7, accent: '#ffe448', cost: 50, tagline: 'Cool head. Big bear energy.' },
+ { id: 'gold', rarity:'rare', name: 'BOLT', species: 'fox', color: 0xffbd3b, accent: '#fff4da', cost: 100, tagline: 'A fox with a need for speed.' },
+ { id: 'neon', rarity:'rare', name: 'GLITCH', species: 'robot', color: 0xb5ff40, accent: '#ac91ff', cost: 200, tagline: 'Built for one more run.' },
+ { id: 'ruby', rarity:'epic', name: 'EMBER', species: 'cat', color: 0xff628d, accent: '#ffe448', cost: 300, tagline: 'Nine lives. Endless attitude.' },
+ { id: 'cosmic', rarity:'epic', name: 'ORBIT', species: 'astronaut', color: 0xb797ff, accent: '#69e3ed', cost: 500, tagline: 'Out of this world.' },
+ {id:'nova',name:'NOVA',species:'fox',variant:'goggles',rarity:'rare',color:0x7e93ff,accent:'#ffad73',cost:750,tagline:'A night-sky explorer with flight goggles.'},
+ {id:'titan',name:'TITAN',species:'robot',variant:'armor',rarity:'epic',color:0x63cbd3,accent:'#ffe448',cost:1400,tagline:'Heavy armour. Light on his feet.'},
+ {id:'sol',name:'SOL',species:'astronaut',variant:'crown',rarity:'legendary',color:0xffcf4a,accent:'#ff836c',cost:2400,tagline:'The solar champion. Made to shine.'}
 ];
 
 export function escapeSVG(value) {
@@ -21,6 +24,7 @@ export function portraitMarkup(character,appearance=null) {
  const cloth=appearance?hex(appearance.color):color,trim=appearance?hex(appearance.trim):c.accent;
  const sleeves=appearance?.id==='varsity'?cream:cloth;
  const outfitDetail=appearance?.id&&appearance.id!=='original'?`<path d="M78 158v43m44-43v43M64 207h72" stroke="${trim}" stroke-width="6"/>`:'';
+ const accessory=c.variant==='goggles'?`<rect x="58" y="87" width="84" height="28" rx="12" fill="#202437" stroke="${trim}"/><path d="M100 88v24" stroke="${trim}"/>`:c.variant==='armor'?`<path d="M58 154l-23 15 10 26 22-9m75-32 23 15-10 26-22-9" fill="${trim}"/>`:c.variant==='crown'?`<path d="M60 65l-6-40 28 15 18-28 18 28 28-15-6 40z" fill="#ffe448"/>`:'';
  let ears = '';
  if (c.species === 'bunny') ears = `<rect x="58" y="13" width="28" height="77" rx="14" fill="${color}"/><rect x="114" y="13" width="28" height="77" rx="14" fill="${color}"/><path d="M72 29v34m56-34v34" stroke="${trim}" stroke-width="9"/>`;
  if (c.species === 'bear') ears = `<circle cx="58" cy="68" r="24" fill="${color}"/><circle cx="142" cy="68" r="24" fill="${color}"/><circle cx="58" cy="68" r="11" fill="${trim}"/><circle cx="142" cy="68" r="11" fill="${trim}"/>`;
@@ -28,7 +32,7 @@ export function portraitMarkup(character,appearance=null) {
  let face = `<rect x="46" y="61" width="108" height="91" rx="43" fill="${color}"/><ellipse cx="100" cy="123" rx="31" ry="20" fill="${cream}"/><path d="M94 117q6-8 12 0l-6 6z" fill="${ink}" stroke="none"/><path d="M91 130q9 9 18 0" fill="none"/><ellipse cx="77" cy="101" rx="6" ry="9" fill="${ink}"/><ellipse cx="123" cy="101" rx="6" ry="9" fill="${ink}"/>`;
  if (c.species === 'robot') face = `<path d="M100 52V28"/><circle cx="100" cy="23" r="9" fill="${trim}"/><rect x="39" y="60" width="122" height="92" rx="19" fill="${color}"/><rect x="51" y="79" width="98" height="43" rx="12" fill="${ink}"/><path d="M68 96v12m64-12v12" stroke="${trim}" stroke-width="9"/><path d="M84 137h32"/>`;
  if (c.species === 'astronaut') face = `<circle cx="100" cy="102" r="62" fill="${cream}"/><rect x="43" y="78" width="114" height="60" rx="29" fill="${ink}"/><path d="M62 96q16-13 34-10" stroke="${trim}" stroke-width="9" fill="none"/><circle cx="36" cy="105" r="10" fill="${color}"/><circle cx="164" cy="105" r="10" fill="${color}"/>`;
- return `<g stroke="${ink}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="100" cy="237" rx="66" ry="9" fill="${ink}" opacity=".15" stroke="none"/><path d="M78 208v21m44-21v21" stroke-width="18"/><rect x="52" y="224" width="39" height="15" rx="7" fill="${trim}"/><rect x="109" y="224" width="39" height="15" rx="7" fill="${trim}"/><path d="M56 166l-15 31m103-31 15 31" stroke="${sleeves}" stroke-width="20"/><rect x="58" y="143" width="84" height="73" rx="27" fill="${cloth}"/><path d="M75 155l49 52" stroke-width="9"/><rect x="100" y="185" width="35" height="23" rx="9" fill="${trim}"/>${outfitDetail}${ears}${face}</g>`;
+ return `<g stroke="${ink}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="100" cy="237" rx="66" ry="9" fill="${ink}" opacity=".15" stroke="none"/><path d="M78 208v21m44-21v21" stroke-width="18"/><rect x="52" y="224" width="39" height="15" rx="7" fill="${trim}"/><rect x="109" y="224" width="39" height="15" rx="7" fill="${trim}"/><path d="M56 166l-15 31m103-31 15 31" stroke="${sleeves}" stroke-width="20"/><rect x="58" y="143" width="84" height="73" rx="27" fill="${cloth}"/><path d="M75 155l49 52" stroke-width="9"/><rect x="100" y="185" width="35" height="23" rx="9" fill="${trim}"/>${outfitDetail}${ears}${face}${accessory}</g>`;
 }
 
 export function portraitSVG(character,appearance=null) {

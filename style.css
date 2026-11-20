@@ -1221,3 +1221,23 @@ button:disabled { cursor:default; opacity:.55; transform:none; box-shadow:none; 
 .running #offline-status {top:auto;right:auto;left:20px;bottom:106px;}
 .running #offline-status[data-offline="false"] {display:none;}
 @media(max-width:600px){#offline-status {right:20px;top:58px;font-size:8px;}.running #offline-status {bottom:105px;left:16px;max-width:120px;text-align:left;}}
+
+/* Player hub: records, collections and preferences, with touch-sized controls. */
+.hub-panel { width:min(760px,96%); max-height:90dvh; }
+.profile-identity { display:grid; grid-template-columns:115px 1fr; gap:18px; align-items:center; text-align:left; margin:18px 0; }
+.profile-identity img { width:115px; height:150px; object-fit:contain; background:#e5ddff; border:2px solid;border-radius:18px; }
+.profile-identity label { display:block; font-size:11px; font-weight:700;margin-bottom:7px; }.profile-identity input { width:100%; max-width:270px; font:700 18px var(--pixel-font);padding:10px;border:2px solid;border-radius:10px;user-select:text; }
+#save-profile-btn { font-size:10px;padding:10px 14px;margin:10px 0;background:var(--lime); }#profile-crew {font-size:10px;line-height:1.6;}
+#profile-status,#settings-status {font-size:12px;line-height:1.6;margin:12px 0;}
+.profile-stats {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:22px 0;}.profile-stats div {background:white;border:2px solid;border-radius:12px;padding:14px 6px;}.profile-stats b {display:block;font:700 24px 'Fredoka',sans-serif;overflow-wrap:anywhere;}.profile-stats span {display:block;font-size:8px;font-weight:700;margin-top:6px;}
+.box-cabinet {border:2px solid;border-radius:18px;padding:20px;background:#e7dcff;margin:25px 0;text-align:left;}.box-cabinet h3,.hub-heading {font:700 22px 'Fredoka',sans-serif;margin-bottom:10px;}.box-cabinet p {font-size:12px;line-height:1.7;margin:10px 0;}.box-cabinet .box-odds {font-size:10px;}.box-cabinet button {font-size:12px;background:var(--yellow);width:100%;}#box-result {background:var(--lime);font-weight:700;font-size:14px;border-radius:12px;padding:12px;min-height:10px;}#box-result:empty {display:none;}
+.hub-heading {text-align:left;margin-top:25px;}.location-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;text-align:left;}.location-card {border:2px solid;border-radius:12px;padding:14px;background:#eee;}.location-card.visited {background:#dcfbd7;}.location-card h4 {font-size:12px;}.location-card p {font-size:10px;line-height:1.6;margin:6px 0;}.location-card small {font-size:8px;font-weight:700;}
+.profile-runs {list-style:none;margin:15px 0 25px;}.profile-runs li {display:flex;gap:12px;justify-content:space-between;border-bottom:1px solid #ccc;padding:12px 0;font-size:12px;text-align:left;}
+.settings-panel {max-width:540px;}.setting-row {display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;font-size:13px;font-weight:600;padding:16px 0;border-bottom:1px solid #ccc;}.setting-row input[type="checkbox"] {width:23px;height:23px;accent-color:#19c848;}.setting-row input[type="range"] {width:130px;accent-color:#19c848;}.setting-row select {font-size:11px;max-width:175px;}.settings-panel button {font-size:12px;margin-top:20px;}#save-settings-btn {background:var(--lime);}
+#profile-btn,#settings-btn,#profile-btn-go,#settings-btn-go {font:700 10px var(--pixel-font);padding:11px 14px;border-radius:12px;background:#e5ddff;}
+.rarity-chip {font-size:8px!important;letter-spacing:.8px;padding:5px 7px;border:1px solid var(--ink);border-radius:99px;color:var(--ink);font-weight:700;}
+#chase-banner {position:absolute;top:190px;left:20px;max-width:240px;background:#d8e7ff;border:2px solid;border-radius:99px;padding:9px 13px;font-size:10px;font-weight:700;}
+.reduced-motion *, .reduced-motion *::before, .reduced-motion *::after {animation:none!important;transition:none!important;}
+@media(max-width:600px){.profile-stats {grid-template-columns:repeat(2,minmax(0,1fr));}.profile-identity {grid-template-columns:90px 1fr;gap:12px;}.profile-identity img {width:90px;height:130px;}.profile-identity input {font-size:16px;}.location-grid {grid-template-columns:1fr;}#chase-banner {top:182px;left:16px;font-size:8px;}.profile-runs li {font-size:10px;}.hub-panel {padding:22px 15px;}.setting-row {font-size:11px;}.setting-row select {max-width:145px;}#profile-btn,#settings-btn {font-size:9px;padding:11px 9px;}}
+
+@media(max-width:600px) and (max-height:850px){#start-screen {justify-content:flex-start;padding-top:100px;padding-bottom:45px;}}
