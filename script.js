@@ -1,4 +1,8 @@
 import * as THREE from "three";
+import { createGameAudio } from "./audio.js";
+import { exportProgress, parseProgress, MAX_BACKUP_BYTES } from "./save-data.js";
+import { dressRunner, animateRunnerDetails } from "./character-details.js";
+import { CHASE_TICKS, CAPTURE_TICKS, createOfficer, animateOfficer } from "./chase.js";
 import { TRACK_SPAWN_Z, OPENING_ROWS, rowSpacing, planObstacleRow, sweptObstacleHit, FIRST_BOX_DISTANCE, nextMysteryDistance } from "./runner-rules.js";
 import { RARITY_COLORS, normalizeSettings, normalizeProfile, recordRun, mysteryReward, redeemMysteryBox } from "./player-meta.js";
 import { JETPACK_SPACING, jetpackReady, OUTFITS, BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
@@ -165,62 +169,10 @@ let currentUsername = null;
 // SOUND SYSTEM (Web Audio API — No Files Needed)
 // =============================================
 
-let audioCtx = null;
-
-function ensureAudio() {
-	if (isMuted) return null;
-	if (!audioCtx) {
-		audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-	}
-	if (audioCtx.state === "suspended") {
-		audioCtx.resume();
-	}
-	return audioCtx;
-}
-
-function playTone(freq, duration, type = "square", volume = 0.15, channel="effects") {
- const p=getPreferences();if(channel==="music"?!p.music:!p.effects)return;volume*=p.volume;if(volume<=0)return;
-	try {
-		const ctx = ensureAudio();
-		if (!ctx) return;
-		const osc = ctx.createOscillator();
-		const gain = ctx.createGain();
-		osc.type = type;
-		osc.frequency.setValueAtTime(freq, ctx.currentTime);
-		gain.gain.setValueAtTime(volume, ctx.currentTime);
-		gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-		osc.connect(gain);
-		gain.connect(ctx.destination);
-		osc.start(ctx.currentTime);
-		osc.stop(ctx.currentTime + duration);
-	} catch (e) { /* silent fail */ }
-}
-
-function sfxJump() {
-	playTone(400, 0.12, "square", 0.1);
-	setTimeout(() => playTone(600, 0.1, "square", 0.08), 50);
-}
-
-function sfxCoin() {
-	playTone(880, 0.08, "sine", 0.12);
-	setTimeout(() => playTone(1200, 0.12, "sine", 0.1), 60);
-}
-
-function sfxCrash() {
-	playTone(120, 0.3, "sawtooth", 0.2);
-	playTone(80, 0.5, "sawtooth", 0.15);
-}
-
-function sfxPowerup() {
-	playTone(523, 0.1, "sine", 0.12);
-	setTimeout(() => playTone(659, 0.1, "sine", 0.12), 80);
-	setTimeout(() => playTone(784, 0.15, "sine", 0.12), 160);
-}
-
-function sfxShieldBreak() {
-	playTone(300, 0.15, "triangle", 0.15);
-	setTimeout(() => playTone(200, 0.2, "triangle", 0.1), 100);
-}
+let {ensureAudio,playTone,sfxJump,sfxCoin,sfxCrash,sfxPowerup,sfxShieldBreak,startMusic,stopMusic}=createGameAudio({
+ preferences:getPreferences,muted:()=>isMuted,playing:()=>state.isPlaying&&!paused,
+ contextFactory:()=>new (window.AudioContext||window.webkitAudioContext)()
+});
 
 // --- STATE ---
 let state = {
@@ -642,6 +594,7 @@ function checkThemeTransition() {
  scene.fog.color.copy(scene.background);
  floorGroups[0].material.color.copy(transition.fromGround).lerp(transition.toGround,weight);
  for(const rail of transition.rails)rail.material.color.copy(rail.from).lerp(transition.toRail,weight);
+ for(const verge of transition.verges||[])verge.material.color.copy(verge.from).lerp(transition.toVerge,weight);
  fadeDistrictMaterials(transition.outgoingMaterials,1-weight);
  fadeDistrictMaterials(transition.incomingMaterials,weight);
  if(t>=1)finishDistrictTransition();
@@ -651,32 +604,7 @@ function checkThemeTransition() {
 // BACKGROUND MUSIC SYSTEM
 // =============================================
 
-let musicInterval = null;
 let isMuted = false;
-let musicBeat = 0;
-
-const BASS_NOTES = [130.81, 130.81, 164.81, 146.83];
-const ARP_NOTES = [523.25, 659.25, 783.99, 659.25, 523.25, 392.00, 523.25, 659.25];
-
-function startMusic() {
-	if (isMuted || !getPreferences().music || musicInterval) return;
-	musicBeat = 0;
-	const beatMs = Math.floor(60000 / 140 / 2);
-	musicInterval = setInterval(() => {
-		if (!state.isPlaying || isMuted) { stopMusic(); return; }
-		try {
-			if (musicBeat % 4 === 0) {
-				playTone(BASS_NOTES[(musicBeat / 4) % BASS_NOTES.length], 0.15, "triangle", 0.05, "music");
-			}
-			playTone(ARP_NOTES[musicBeat % ARP_NOTES.length], 0.08, "square", 0.025, "music");
-			musicBeat++;
-		} catch (e) { /* silent */ }
-	}, beatMs);
-}
-
-function stopMusic() {
-	if (musicInterval) { clearInterval(musicInterval); musicInterval = null; }
-}
 
 function toggleMute() {
  savePreferences({...getPreferences(),muted:!getPreferences().muted});
@@ -806,6 +734,7 @@ function processAchievementQueue() {
 }
 
 function openBadges() {
+ if(!document.getElementById("profile-overlay").classList.contains("hidden"))closeHub("profile");
 	document.getElementById("badges-overlay").classList.remove("hidden");
 	renderBadges();
 }
@@ -1024,6 +953,7 @@ function initUsernameHandlers() {
 // =============================================
 
 async function openLeaderboard(tab) {
+ if(!document.getElementById("profile-overlay").classList.contains("hidden"))closeHub("profile");
 	if (typeof tab !== "string") tab = currentLBTab;
 	currentLBTab = tab;
 	uiLeaderboardOverlay.classList.remove("hidden");
@@ -1134,6 +1064,7 @@ function showShopTab(tab) {
 function selectPreviewCharacter(id) {
  const character=SKINS.find(c=>c.id===id);if(!character)return;
  previewCharacterId=id;
+ document.getElementById('shop-panel').scrollTop=0;
  const wallet=readWallet(),ownsCharacter=wallet.owned.includes(id);
  document.getElementById('preview-name').textContent=character.name;
  document.getElementById('preview-description').textContent=`${character.species.toUpperCase()} · ${character.tagline}`;
@@ -1368,10 +1299,13 @@ function enterDistrict(index) {
   fromGround:floorGroups[0].material.color.clone(),toGround:new THREE.Color(state.theme.ground),
   rails:floorGroups.filter(piece=>piece.userData.edgeRail).map(piece=>({material:piece.material,from:piece.material.color.clone()})),
   toRail:new THREE.Color(index===1?0x45485c:0xffd85c),outgoing,
+  verges:floorGroups.filter(piece=>piece.userData.verge).map(piece=>({material:piece.material,from:piece.material.color.clone()})),
+  toVerge:new THREE.Color([0x8ccbc1,0x343447,0x748598,0xd3a87a,0x709d60,0xe2f2fa][index]),
   outgoingMaterials:captureDistrictMaterials(outgoing),progress:0
  };
  if(index===0)createCityBackdrop();else createDistrictScenery(index);
  const incoming=floorGroups.filter(group=>group.userData.districtBackdrop&&!outgoing.includes(group));
+ applySceneryQuality();
  transition.incomingMaterials=captureDistrictMaterials(incoming);
  fadeDistrictMaterials(transition.incomingMaterials,0);
  state.themeTransition=transition;
@@ -1445,6 +1379,7 @@ function rescueRun() {
  updateBankDisplay();lastTime=performance.now();accumulator=0;ensureLoop();return true;
 }
 function updateCelebration() {
+ if(captureTicks){updateCapture();return;}
  if(getPreferences().reducedMotion||!player?.userData?.limbs||celebrationTicks<=0)return;
  celebrationTicks--;
  const species=SKINS.find(c=>c.id===player.userData.characterId).species,phase=celebrationTicks/90;
@@ -1475,7 +1410,7 @@ function initRunnerFeatures() {
 // Player hub, earned rewards and preferences all persist on this device.
 const SETTINGS_KEY='super_hopper_settings_v1';
 let preferences=null,pursuer=null,hubReturnFocus=null;
-let graphicsUnavailable=false;
+let graphicsUnavailable=false,captureTicks=0,pendingRestore=null;
 function getPreferences(){
  if(preferences)return preferences;
  let saved;try{saved=JSON.parse(localStorage.getItem(SETTINGS_KEY));}catch{}
@@ -1490,11 +1425,15 @@ function savePreferences(next){
  try{localStorage.setItem(MUTE_KEY,isMuted?'1':'0');localStorage.setItem('hopper_sensitivity',String(value.sensitivity));}catch{}
  applyPreferences();return true;
 }
+function applySceneryQuality(){
+ if(scene)scene.traverse(part=>{if(part.userData.optionalDetail)part.visible=getPreferences().quality!=='low';});
+}
 function applyPreferences(){
  const p=getPreferences();document.body.classList.toggle('reduced-motion',p.reducedMotion);
  document.getElementById('sensitivity').value=String(p.sensitivity);
  document.getElementById('mute-btn').textContent=p.muted?'🔇':'🔊';
  if(renderer){renderer.setPixelRatio(p.quality==='low'?1:Math.min(window.devicePixelRatio||1,p.quality==='high'?2:isTouchDevice()?1.5:2));renderer.shadowMap.enabled=p.quality==='high'||p.quality==='auto'&&!isTouchDevice();renderer.setSize(window.innerWidth,window.innerHeight);}
+ applySceneryQuality();
  if(p.muted||!p.music)stopMusic();else if(state.isPlaying&&!paused&&!state.countdownTicks)startMusic();
 }
 function fillSettings(){
@@ -1542,7 +1481,7 @@ function openMysteryBox(){
 }
 function saveProfileName(){
  const name=document.getElementById('profile-name').value.trim();
- if(!/^[a-zA-Z0-9 _-]{2,16}$/.test(name)){document.getElementById('profile-status').textContent='Use 2–16 letters, numbers, spaces, underscores or dashes.';return;}
+ if(!/^[a-zA-Z0-9 _#-]{2,16}$/.test(name)){document.getElementById('profile-status').textContent='Use 2–16 letters, numbers, spaces, underscores, dashes or #.';return;}
  try{saveUsername(name);currentUsername=name;updateBadgeName();document.getElementById('profile-status').textContent='Name saved. Future runs use this name.';}catch{document.getElementById('profile-status').textContent='Could not save the name.';}
 }
 function createMysteryBox(){
@@ -1555,30 +1494,65 @@ function createMysteryBox(){
 function clearPursuer(){if(pursuer){scene.remove(pursuer);disposeMeshMaterials(pursuer);pursuer=null;}document.getElementById('chase-banner').classList.add('hidden');}
 function startPursuer(){
  clearPursuer();if(!getPreferences().chaseIntro)return;
- const group=new THREE.Group(),geo=getCachedGeos(),blue=new THREE.MeshStandardMaterial({color:0x284a8b}),skin=new THREE.MeshStandardMaterial({color:0xffd4a9}),dark=new THREE.MeshStandardMaterial({color:0x1f2945}),white=new THREE.MeshBasicMaterial({color:0xfff4da});
- const part=(g,m,x,y,z,sx,sy,sz)=>{const mesh=new THREE.Mesh(g,m);mesh.position.set(x,y,z);mesh.scale.set(sx,sy,sz);group.add(mesh);return mesh;};
- part(geo.characterBody,blue,0,0.55,0,1.1,1.1,1);
- part(geo.rounded,skin,0,1.04,0,0.34,0.33,0.3);part(geo.unitBox,blue,0,1.31,0,0.7,0.13,0.6);part(geo.unitBox,dark,0,1.26,0.27,0.65,0.06,0.28);
- // White back patch and gold badge make the uniform readable from the chase camera.
- part(geo.unitBox,white,0,0.63,-0.31,0.45,0.13,0.025);part(geo.rounded,new THREE.MeshBasicMaterial({color:0xffd85c}),-0.17,0.64,0.31,0.06,0.08,0.025);
- const limbs=[];for(const side of [-1,1]){const arm=part(geo.rounded,blue,side*0.42,0.5,0,0.12,0.28,0.12),leg=part(geo.rounded,dark,side*0.17,0.16,0,0.13,0.22,0.13);limbs.push({arm,leg,side});}
- group.userData.limbs=limbs;group.rotation.y=Math.PI;group.scale.setScalar(0.9);group.position.set(-0.65,0,1.8);
- scene.add(group);pursuer=group;state.chaseTicks=180;document.getElementById('chase-banner').classList.remove('hidden');
+ const group=createOfficer(THREE,getCachedGeos());
+ scene.add(group);pursuer=group;state.chaseTicks=CHASE_TICKS;document.getElementById('chase-banner').textContent='CHASE ON · KEEP RUNNING!';document.getElementById('chase-banner').classList.remove('hidden');
 }
 function updatePursuer(){
  if(!pursuer)return;
- const t=1-state.chaseTicks/180;state.chaseTicks--;
- pursuer.position.x+=(state.currentLaneX-0.65-pursuer.position.x)*0.08;pursuer.position.z=1.8+t*t*11;
- if(!getPreferences().reducedMotion){pursuer.position.y=Math.abs(Math.sin(state.runTicks*0.28))*0.08;for(const {arm,leg,side} of pursuer.userData.limbs){arm.rotation.x=Math.sin(state.runTicks*0.3)*side*0.8;leg.rotation.x=-arm.rotation.x;}}
- if(state.chaseTicks<=0)clearPursuer();
+ animateOfficer(pursuer,CHASE_TICKS-state.chaseTicks,state.currentLaneX,getPreferences().reducedMotion);
+ if(--state.chaseTicks<=0)clearPursuer();
+}
+function beginCapture() {
+ if(!getPreferences().chaseIntro||getPreferences().reducedMotion)return;
+ captureTicks=CAPTURE_TICKS;
+ pursuer=createOfficer(THREE,getCachedGeos());scene.add(pursuer);
+ pursuer.position.set(state.currentLaneX-0.65,0,4.5);
+ uiGameOver.classList.add('hidden');
+ document.getElementById('chase-banner').textContent='CAUGHT UP! · ONE MORE RUN?';
+ document.getElementById('chase-banner').classList.remove('hidden');
+}
+function updateCapture() {
+ if(!captureTicks)return;
+ animateOfficer(pursuer,CAPTURE_TICKS-captureTicks,state.currentLaneX,false,true);
+ player.visible=true;player.rotation.x=-0.2;
+ if(--captureTicks===0){clearPursuer();uiGameOver.classList.remove('hidden');}
+}
+
+function downloadProgress(){
+ try{
+  const blob=new Blob([exportProgress(readWallet())],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download=`hopper-progress-${localDay()}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  document.getElementById('backup-status').textContent='Backup prepared. Keep the downloaded file somewhere safe.';
+ }catch{document.getElementById('backup-status').textContent='Could not create a backup in this browser.';}
+}
+async function previewProgressFile(event){
+ pendingRestore=null;document.getElementById('restore-progress-btn').disabled=true;
+ const file=event.target.files?.[0];if(!file)return;
+ try{
+  if(file.size>MAX_BACKUP_BYTES)throw new Error('Choose a progress file smaller than 200 KB.');
+  pendingRestore=parseProgress(await file.text(),SKINS,BOARDS,OUTFITS,DISTRICTS);
+  const current=readWallet();
+  document.getElementById('backup-status').textContent=`Ready to restore: ${pendingRestore.bank} coins, ${pendingRestore.owned.length} characters, ${pendingRestore.profile.runs} recorded runs. Current: ${current.bank} coins, ${current.owned.length} characters. Restoring replaces this device’s wallet. Download your current backup first if you want to keep it.`;
+  document.getElementById('restore-progress-btn').disabled=false;
+ }catch(error){document.getElementById('backup-status').textContent=error.message;}
+}
+function restoreProgress(){
+ if(!pendingRestore||state.isPlaying)return false;
+ try{writeWallet(pendingRestore);}catch{document.getElementById('backup-status').textContent='Could not save the backup. Your existing wallet was kept.';return false;}
+ pendingRestore=null;document.getElementById('restore-progress-btn').disabled=true;
+ document.getElementById('restore-file').value='';updateBankDisplay();renderProfile();
+ document.getElementById('backup-status').textContent='Progress restored on this device.';return true;
 }
 function initPlayerHub(){
  getPreferences();applyPreferences();
+ document.getElementById('export-progress-btn').addEventListener('click',downloadProgress);
+ document.getElementById('restore-file').addEventListener('change',previewProgressFile);
+ document.getElementById('restore-progress-btn').addEventListener('click',restoreProgress);
  for(const page of ['profile','settings']){
   for(const id of [page+'-btn',page+'-btn-go'])document.getElementById(id).addEventListener('click',()=>openHub(page));
   document.getElementById('close-'+page+'-btn').addEventListener('click',()=>closeHub(page));
   document.getElementById(page+'-overlay').addEventListener('click',e=>{if(e.target.id===page+'-overlay')closeHub(page);});
-  document.getElementById(page+'-overlay').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeHub(page);}if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll('button:not(:disabled),input,select')],first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
+  document.getElementById(page+'-overlay').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeHub(page);}if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary')],first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
  }
  document.getElementById('open-box-btn').addEventListener('click',openMysteryBox);document.getElementById('save-profile-btn').addEventListener('click',saveProfileName);
  document.getElementById('save-settings-btn').addEventListener('click',saveSettingsForm);
@@ -1613,7 +1587,7 @@ function init() {
   renderer.setSize(window.innerWidth,window.innerHeight);
   renderer.shadowMap.enabled=!isTouchDevice();renderer.shadowMap.type=THREE.PCFShadowMap;
   document.getElementById('game-container').appendChild(renderer.domElement);
-  renderer.domElement.addEventListener('webglcontextlost',event=>{event.preventDefault();togglePause(true);document.getElementById('graphics-status').textContent='Graphics were interrupted. Reload the game to reconnect. Saved progress is kept.';document.getElementById('graphics-status').classList.remove('hidden');});
+  renderer.domElement.addEventListener('webglcontextlost',event=>{event.preventDefault();togglePause(true);document.getElementById('pause-screen').appendChild(document.getElementById('graphics-status'));document.getElementById('graphics-status').textContent='Graphics were interrupted. Reload the game to reconnect. Saved progress is kept.';document.getElementById('graphics-status').classList.remove('hidden');});
  } catch {
   renderer=null;graphicsUnavailable=true;
   document.getElementById('graphics-status').classList.remove('hidden');
@@ -1733,10 +1707,6 @@ function onWindowResize() {
 
 // --- GAME LOGIC ---
 
-function randomTheme() {
-	return THEMES[Math.floor(Math.random() * THEMES.length)];
-}
-
 // Art is built from cached low-poly primitives; each skin keeps a stable silhouette.
 function createPlayer(characterId=getSelectedSkin(),preview=false) {
 	if (!preview && player) { disposeOwnedObject(player); scene.remove(player); }
@@ -1824,6 +1794,7 @@ function createPlayer(characterId=getSelectedSkin(),preview=false) {
 		limbs.push({ arm, leg, side });
 	}
 	group.userData.limbs = limbs;
+ dressRunner(THREE,group,geo,skin,{coat,accent,ink,cream},part);
 	group.userData.characterId = skin.id;
  group.userData.outfit=appearance;
 	// The track extends along negative Z; the camera follows from positive Z.
@@ -1834,6 +1805,7 @@ function createPlayer(characterId=getSelectedSkin(),preview=false) {
 
 function animateCharacter() {
 	if (!player.userData?.limbs) return;
+ animateRunnerDetails(player,simulationTime,getPreferences().reducedMotion);
 	const species = SKINS.find(c => c.id === player.userData.characterId)?.species || "bunny";
 	const poses = {
 		bunny: { arms:-1, knees:0.85, entry:1.2, tilt:0.08 },
@@ -1867,7 +1839,7 @@ function createObstacleMesh(kind = Math.floor(Math.random() * OBSTACLES.length))
 	const group = new THREE.Group();
 	const geo = getCachedGeos();
 	const yellow = definition.id === "barricade" ? new THREE.MeshStandardMaterial({ color: 0xffd83f, roughness: 0.7 }) : null;
-	const orange = new THREE.MeshStandardMaterial({ color: 0xff6540, roughness: 0.75 });
+	const orange = new THREE.MeshStandardMaterial({ color: state.theme?.obstacle ?? 0xff6540, roughness: 0.75 });
 	const dark = new THREE.MeshStandardMaterial({ color: 0x25263b, roughness: 0.85 });
 	const white = new THREE.MeshStandardMaterial({ color: 0xfff4da, roughness: 0.6 });
 	function part(geometry, material, x, y, z, sx, sy, sz) {
@@ -1914,6 +1886,21 @@ function createDecorationMesh() {
 		const post = new THREE.Mesh(getCachedGeos().unitBox, new THREE.MeshStandardMaterial({ color: 0x35394b, roughness: 0.9 }));
 		post.position.y = 1.5; post.scale.set(0.25, 3, 0.25); pillar.add(post); return pillar;
 	}
+ if(state.districtIndex===4||state.districtIndex===5||state.districtIndex===2||state.districtIndex===3){
+  const geo=getCachedGeos(),group=new THREE.Group();
+  const add=(g,color,x,y,z,sx,sy,sz)=>{const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:.9}));mesh.position.set(x,y,z);mesh.scale.set(sx,sy,sz);group.add(mesh);return mesh;};
+  if(state.districtIndex===4){
+   for(const x of [-.3,0,.3]){add(geo.unitBox,0x6b9a48,x,1.5,0,.12,3,.12);for(const y of [.8,1.6,2.4])add(geo.unitBox,0xc5d58a,x,y,0,.15,.06,.15);}
+  }else if(state.districtIndex===5){
+   add(geo.unitBox,0x766355,0,.45,0,.16,.9,.16);
+   add(geo.obstacleCone,0x4d7b79,0,1.2,0,1.7,1.7,1.7);add(geo.obstacleCone,0xf1fbff,0,1.65,0,1.1,1.2,1.1);
+  }else if(state.districtIndex===2){
+   add(geo.unitBox,0x8e9fb8,0,.45,0,1.2,.9,1.2);for(const y of [.2,.4,.6])add(geo.unitBox,0x344558,0,y,.61,.8,.06,.02);
+  }else{
+   add(geo.unitBox,0xad7857,0,.7,0,.18,1.4,.18);const ring=add(geo.coinRing,0xff765b,0,1.1,.15,1,1,1);
+  }
+  return group;
+ }
 	const geos = getCachedGeos();
 	const group = new THREE.Group();
 	const bark = new THREE.MeshStandardMaterial({ color: 0x655077, flatShading: true });
@@ -1961,7 +1948,8 @@ function createCityBackdrop() {
 			}
 		}
 	}
-	group.add(buildings, windows);
+	windows.userData.optionalDetail=true;
+ group.add(buildings, windows);
 	// Warm horizon sun and cloud puffs, set behind the playable corridor.
 	const sun = new THREE.Mesh(new THREE.CircleGeometry(6, 32), new THREE.MeshBasicMaterial({ color: 0xffdf75, fog: false }));
 	sun.position.set(14, 20, -83);
@@ -1973,7 +1961,8 @@ function createCityBackdrop() {
 		transform.updateMatrix();
 		clouds.setMatrixAt(i, transform.matrix);
 	}
-	group.add(clouds);
+	clouds.userData.optionalDetail=true;
+ group.add(clouds);
 	scene.add(group);
 	group.userData.districtBackdrop = true;
 	floorGroups.push(group);
@@ -2008,27 +1997,15 @@ function createCoinMesh() {
 	return group;
 }
 
-function generateWorldChunk(zPos) {
-	// Create a row (chunk)
-	// We recycle logic here: simpler to just managing list of objects
-	// But for performance in JS, let's keep it simple: List of objects with Z > -50
-}
-
-// SIMPLIFIED APPROACH:
-// We will have a loop that spawns rows at regular Z intervals ahead of the player?
-// No, player is static at Z=0. Objects move towards player (+Z).
-// Spawner is at Z = -80.
-// Removal at Z = 10.
-
+// World objects move towards the stationary runner along positive Z.
 let worldObjects = [];
 let spawnTimer = 0;
-let lastObstacleLane = -99;
 let powerupSpawnCounter = 0;
 
 function spawnRow(zStart = TRACK_SPAWN_Z) {
 
 	// Left Decor
-	if (Math.random() > 0.3) {
+	if (Math.random() > (getPreferences().quality==='low'?0.8:0.3)) {
 		const dL = createDecorationMesh();
 		dL.position.set(-5 - Math.random() * 5, 0, zStart);
 		scene.add(dL);
@@ -2036,7 +2013,7 @@ function spawnRow(zStart = TRACK_SPAWN_Z) {
 	}
 
 	// Right Decor
-	if (Math.random() > 0.3) {
+	if (Math.random() > (getPreferences().quality==='low'?0.8:0.3)) {
 		const dR = createDecorationMesh();
 		dR.position.set(5 + Math.random() * 5, 0, zStart);
 		scene.add(dR);
@@ -2099,7 +2076,7 @@ function spawnRow(zStart = TRACK_SPAWN_Z) {
 }
 
 function startGame() {
-	if (state.isPlaying || graphicsUnavailable) return;
+	if (state.isPlaying || graphicsUnavailable || captureTicks) return;
 
 	// Unlock audio context on game start
 	ensureAudio();
@@ -2205,6 +2182,7 @@ function startGame() {
 		const verge = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.16, 200), new THREE.MeshStandardMaterial({ color: 0x8ccbc1 }));
 		verge.position.set(side * 5.6, 0.04, -50);
 		verge.receiveShadow = true;
+  verge.userData.verge = true;
 		scene.add(verge);
 		floorGroups.push(verge);
 		const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.13, 200), new THREE.MeshStandardMaterial({ color: 0xffd85c }));
@@ -2229,6 +2207,7 @@ function startGame() {
 	floorGroups.push(dashes);
 
 	createCityBackdrop();
+ applySceneryQuality();
 
 	// Player
 	player = createPlayer();
@@ -2315,6 +2294,7 @@ function gameOver() {
 
 	// Check achievements
 	checkAchievements();
+ beginCapture();
 	if (!loopActive) { lastTime = performance.now(); accumulator = 0; ensureLoop(); }
 
 }

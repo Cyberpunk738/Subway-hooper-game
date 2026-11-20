@@ -15,7 +15,7 @@
 
 <body>
 	<div id="game-container"></div>
- <p id="graphics-status" class="hidden" role="alert">3D graphics are unavailable in this browser. Try a browser with WebGL enabled. Your profile, shop and settings are still available.</p>
+
 
 	<!-- Username Modal (shown on first visit) -->
 	<div id="username-modal" class="hidden">
@@ -89,8 +89,9 @@
    <div class="profile-identity"><img id="profile-avatar" alt="Your equipped character"/><div><label for="profile-name">Runner name</label><input id="profile-name" maxlength="16" autocomplete="nickname"/><button id="save-profile-btn">SAVE NAME</button><p id="profile-crew"></p></div></div>
    <p id="profile-status" role="status"></p><div id="profile-stats" class="profile-stats"></div>
    <section class="box-cabinet"><h3>MYSTERY BOX COLLECTION</h3><p>Collect the purple gift boxes on the track. Open them here after a run.</p><button id="open-box-btn">OPEN MYSTERY BOX</button><p id="profile-opened"></p><p class="box-odds">Rewards: 70% +40 coins · 25% +100 coins · 5% random character. A duplicate character converts to 150 coins. No paid boxes.</p><div id="box-result" role="status" aria-live="polite"></div></section>
+   <details class="backup-panel"><summary>BACK UP YOUR PROGRESS</summary><p>Save coins, characters, outfits, boards, run records and missions to a file you can restore on another device. Runner name, settings and leaderboard records are separate.</p><button id="export-progress-btn">DOWNLOAD PROGRESS</button><label for="restore-file">Choose a Hopper backup</label><input id="restore-file" type="file" accept=".json,application/json"/><p id="backup-status" role="status" aria-live="polite"></p><button id="restore-progress-btn" disabled>RESTORE THIS BACKUP</button></details>
    <h3 class="hub-heading">LOCATION PASSPORT</h3><div id="profile-locations" class="location-grid"></div>
-   <h3 class="hub-heading">LAST FIVE RUNS</h3><ul id="profile-runs" class="profile-runs"></ul><button id="close-profile-btn">BACK TO THE GAME</button>
+   <div class="profile-links"><button id="leaderboard-btn">TOP HOPPERS</button><button id="badges-btn">BRAGGING RIGHTS</button></div><h3 class="hub-heading">LAST FIVE RUNS</h3><ul id="profile-runs" class="profile-runs"></ul><button id="close-profile-btn">BACK TO THE GAME</button>
   </section>
  </div>
  <div id="settings-overlay" class="hidden feature-overlay">
@@ -103,7 +104,7 @@
    <label class="setting-row">Swipe sensitivity<select id="setting-sensitivity"><option value="10">Super sensitive</option><option value="14">Snappy</option><option value="24">Steady</option></select></label>
    <label class="setting-row">Graphics<select id="setting-quality"><option value="auto">Auto</option><option value="low">Low · lighter rendering</option><option value="high">High · sharper rendering</option></select></label>
    <label class="setting-row">Reduce decorative motion<input id="setting-reducedMotion" type="checkbox"/></label>
-   <label class="setting-row">Opening police chase<input id="setting-chaseIntro" type="checkbox"/></label>
+   <label class="setting-row">Police chase + capture<input id="setting-chaseIntro" type="checkbox"/></label>
    <p class="feature-note">These settings keep your progress and purchases.</p><button id="save-settings-btn">SAVE SETTINGS</button><p id="settings-status" role="status" aria-live="polite"></p><button id="close-settings-btn">BACK TO THE GAME</button>
   </section>
  </div>
@@ -114,7 +115,7 @@
 			<h2 id="share-title">BEAT MY RUN.</h2>
 			<img id="score-card-preview" class="hidden" alt="Your Super Hopper score card" />
 			<p id="share-status" role="status" aria-live="polite"></p>
-			<div class="image-share-actions"><button id="share-image-btn" disabled>SHARE IMAGE ↗</button><a id="download-score-btn" class="hidden" download>DOWNLOAD IMAGE ↓</a></div>
+			<div class="image-share-actions"><button id="share-image-btn" disabled>SHARE IMAGE</button><a id="download-score-btn" class="hidden" download>DOWNLOAD IMAGE ↓</a></div>
 			<details class="text-share-fallback"><summary>Share text instead</summary>
 			<label for="share-text">Your score and game link</label>
 			<textarea id="share-text" rows="5" readonly spellcheck="false"></textarea>
@@ -131,7 +132,7 @@
 		<div id="run-district" class="hidden"></div><div id="chase-banner" class="hidden" role="status">CHASE ON · KEEP RUNNING!</div><div id="danger-display" class="hidden"></div><div id="rescue-countdown" class="hidden" role="status" aria-live="assertive">3</div>
 		<div id="board-btn" class="hidden" role="status" aria-label="Active ride">COLLECT A BOARD OR JETPACK</div>
 		<button id="pause-btn" class="hidden" aria-label="Pause game">Ⅱ</button>
-		<div id="pause-screen" class="center-screen hidden"><p class="eyebrow">TAKE A BREATHER</p><h1 class="title">ON PAUSE.</h1><p class="subtitle">Your next great run can wait.</p><button id="resume-btn">LET’S GO →</button></div>
+		<div id="pause-screen" class="center-screen hidden"><p class="eyebrow">TAKE A BREATHER</p><h1 class="title">ON PAUSE.</h1><p class="subtitle">Your next great run can wait.</p><button id="resume-btn">LET’S GO</button></div>
 		<!-- HUD: Score -->
 		<div id="score-display" class="hidden">
 			<small>YOUR RUN</small> <span id="score">0</span>
@@ -174,14 +175,15 @@
 			<div id="streak-display" class="hidden"></div>
 			<p class="selected-character">RUNNING WITH <b id="selected-character-name">HOP</b></p>
 			<div id="coin-bank-display">🪙 <span id="bank-coins">0</span></div>
-			<button id="start-btn">LET’S PLAY →</button>
+			 <p id="graphics-status" class="hidden" role="alert">3D graphics are unavailable in this browser. Try a browser with WebGL enabled. Your profile, shop and settings are still available.</p>
+			<button id="start-btn">LET’S PLAY</button>
 			<div class="screen-btn-row">
-				<button id="leaderboard-btn">TOP HOPPERS ↗</button>
-				<button id="shop-btn">CHARACTERS + BOARDS ↗</button>
-				<button id="badges-btn">BRAGGING RIGHTS ↗</button>
-				<button id="missions-btn">DAILY MISSIONS ↗</button><button id="profile-btn">MY PROFILE ↗</button><button id="settings-btn">SETTINGS ↗</button>
+
+				<button id="shop-btn">CHARACTERS + BOARDS</button>
+
+				<button id="missions-btn">DAILY MISSIONS</button><button id="profile-btn">MY PROFILE</button><button id="settings-btn">SETTINGS</button>
 			</div>
-			<label class="sensitivity-label" for="sensitivity">SWIPE FEEL <select id="sensitivity"><option value="10">SUPER SENSITIVE</option><option value="14" selected>SNAPPY</option><option value="24">STEADY</option></select></label>
+			<label class="sensitivity-label hidden" for="sensitivity">SWIPE FEEL <select id="sensitivity"><option value="10">SUPER SENSITIVE</option><option value="14" selected>SNAPPY</option><option value="24">STEADY</option></select></label>
 			<div class="play-tips"><span><b>01</b> SWIPE TO DODGE</span><span><b>02</b> TAP TO JUMP / TRICK</span><span><b>03</b> CHASE YOUR BEST</span></div>
 		</div>
 
@@ -190,13 +192,13 @@
 			<p class="subtitle">SCORE: <span id="final-score">0</span></p>
 			<p id="result-progress" class="feature-note" role="status"></p><p id="coins-collected">🪙 <span id="final-coins">0</span> COINS</p>
 			<p id="personal-best" class="hidden"><span id="best-scope">DEVICE BEST</span>: <span id="best-score">0</span></p>
-			<button id="restart-btn">TRY AGAIN</button>
-			<div class="screen-btn-row">
-				<button id="leaderboard-btn-go">TOP HOPPERS ↗</button>
-				<button id="share-btn">📸 SHARE IMAGE</button>
-				<button id="shop-btn-go">CHARACTERS + BOARDS ↗</button><button id="missions-btn-go">MISSIONS ↗</button>
-				<button id="profile-btn-go">PROFILE + BOXES ↗</button><button id="settings-btn-go">SETTINGS ↗</button><button id="home-btn">🏠 HOME</button>
-			</div>
+			<button id="restart-btn">TRY AGAIN</button><div class="result-actions"><button id="share-btn">SHARE IMAGE</button><button id="profile-btn-go">PROFILE + REWARDS</button><button id="home-btn">HOME</button></div>
+			<details class="result-extras"><summary>SHOP, MISSIONS + MORE</summary><div class="screen-btn-row">
+				<button id="leaderboard-btn-go">TOP HOPPERS</button>
+
+				<button id="shop-btn-go">CHARACTERS + BOARDS</button><button id="missions-btn-go">MISSIONS</button>
+				<button id="settings-btn-go">SETTINGS</button>
+			</div></details>
 		</div>
 
 		<!-- Mobile On-Screen Controls -->

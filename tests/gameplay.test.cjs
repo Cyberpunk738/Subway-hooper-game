@@ -23,6 +23,14 @@ function game(storage = new Map(), THREE) {
   performance:{now:()=>100}, requestAnimationFrame(){},cancelAnimationFrame(){}, setTimeout(){}, clearTimeout(){},setInterval(){},clearInterval(){},
  });
  let source = fs.readFileSync(require('node:path').join(__dirname,'../script.js'),'utf8');
+ const audio=fs.readFileSync(require('node:path').join(__dirname,'../audio.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(audio,context);
+ const saves=fs.readFileSync(require('node:path').join(__dirname,'../save-data.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(saves,context);
+ const details=fs.readFileSync(require('node:path').join(__dirname,'../character-details.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(details,context);
+ const chase=fs.readFileSync(require('node:path').join(__dirname,'../chase.js'),'utf8').replace(/^export /gm,'');
+ vm.runInContext(chase,context);
  const rules=fs.readFileSync(require('node:path').join(__dirname,'../runner-rules.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(rules,context);
  const meta=fs.readFileSync(require('node:path').join(__dirname,'../player-meta.js'),'utf8').replace(/^export /gm,'');
@@ -31,7 +39,7 @@ function game(storage = new Map(), THREE) {
  vm.runInContext(progression,context);
  const art = fs.readFileSync(require('node:path').join(__dirname,'../game-art.js'),'utf8').replace(/^export /gm,'');
  vm.runInContext(art, context);
- source = source.replace(/import \{[^\n]+\} from "\.\/runner-rules.js";/,'').replace(/import \{[^\n]+\} from "\.\/player-meta.js";/,'').replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
+ source = source.replace(/import \{[^\n]+\} from "\.\/audio.js";/,'').replace(/import \{[^\n]+\} from "\.\/save-data.js";/,'').replace(/import \{[^\n]+\} from "\.\/character-details.js";/,'').replace(/import \{[^\n]+\} from "\.\/chase.js";/,'').replace(/import \{[^\n]+\} from "\.\/runner-rules.js";/,'').replace(/import \{[^\n]+\} from "\.\/player-meta.js";/,'').replace(/import \{[^\n]+\} from "\.\/progression.js";/,'').replace(/import \{ CHARACTERS, portraitSVG, renderScoreCard \} from "\.\/game-art.js";/,'').replace(/import \* as THREE from "three";/,'').replace(/import \{[\s\S]*?\} from "\.\/supabase.js";/,'').replace(/init\(\);\s*$/,'');
  vm.runInContext(source, context);
  return {run:code=>vm.runInContext(code,context),element,storage};
 }
@@ -494,7 +502,7 @@ test('expanded crew, chase, six districts, earned box and final profile survive 
   assert.ok(g.run('new THREE.Box3().setFromObject(player).getSize(new THREE.Vector3()).toArray().every(Number.isFinite)'));
  }
  g.run('startGame();');assert.equal(g.run('pursuer!==null'),true);
- g.run('for(let i=0;i<180;i++)updateRunFeatures();');assert.equal(g.run('pursuer'),null);
+ g.run('for(let i=0;i<CHASE_TICKS;i++)updateRunFeatures();');assert.equal(g.run('pursuer'),null);
  for(let i=0;i<6;i++){
   g.run(`state.distance=${i*400};enterDistrict(${i});for(let k=0;k<91;k++)checkThemeTransition();`);
   assert.equal(g.run('floorGroups.filter(g=>g.userData.districtBackdrop).length'),1);
@@ -504,7 +512,7 @@ test('expanded crew, chase, six districts, earned box and final profile survive 
  g.run('gameOver();');assert.equal(g.run('readWallet().profile.runs'),1);assert.equal(g.run('readWallet().profile.visited.length'),6);
  g.run('gameOver();');assert.equal(g.run('readWallet().profile.runs'),1);
  assert.equal(g.run('openMysteryBox()'),true);assert.equal(g.run('readWallet().profile.opened'),1);
- g.run('startGame();');assert.equal(g.run('pursuer!==null'),true);
+ g.run('for(let i=0;i<CAPTURE_TICKS;i++)updateCelebration();startGame();');assert.equal(g.run('pursuer!==null'),true);
 
 });
 
@@ -516,4 +524,57 @@ test('coalesced pointer release swipes dodge without accidentally jumping',()=>{
  assert.equal(g.run('state.lane'),1);assert.equal(g.run('jumpBuffer'),0);
  events.pointerdown(down);events.pointerup({...down,clientY:75});
  assert.equal(g.run('jumpBuffer'),8);
+});
+
+test('police capture completes before results and cannot be skipped by a restart',async()=>{
+ const THREE=await import('../vendor/three.module.min.js'),g=game(new Map(),THREE);
+ g.run('scene=new THREE.Scene();camera=new THREE.PerspectiveCamera();isMuted=true;handleScoreSubmission=checkAchievements=showMilestone=()=>{};startGame();gameOver();');
+ assert.equal(g.run('captureTicks'),54);assert.equal(g.element('game-over-screen').classList.hidden,true);
+ g.run('startGame();');assert.equal(g.run('state.isPlaying'),false);
+ g.run('for(let i=0;i<CAPTURE_TICKS;i++)updateCelebration();');
+ assert.equal(g.run('captureTicks'),0);assert.equal(g.run('pursuer'),null);assert.equal(g.element('game-over-screen').classList.hidden,false);
+ g.run('savePreferences({...getPreferences(),reducedMotion:true});startGame();gameOver();');
+ assert.equal(g.run('captureTicks'),0);assert.equal(g.element('game-over-screen').classList.hidden,false);
+ assert.equal(g.run('readWallet().profile.runs'),2);
+});
+
+test('validated wallet restore changes all progress in one write and preserves existing wallet on failure',()=>{
+ const g=game();g.run('pendingRestore=readWallet();pendingRestore.bank=456;');
+ assert.equal(g.run('restoreProgress()'),true);assert.equal(g.run('getCoinBank()'),456);
+ g.run('pendingRestore=readWallet();pendingRestore.bank=999;localStorage.setItem=()=>{throw Error("quota")};');
+ assert.equal(g.run('restoreProgress()'),false);assert.equal(g.run('getCoinBank()'),456);
+ assert.equal(g.run('pendingRestore.bank'),999);
+});
+
+test('cosmetic details keep all runners at equal scale, face forward and respect reduced motion',async()=>{
+ const THREE=await import('../vendor/three.module.min.js'),g=game(new Map(),THREE);
+ g.run('scene=new THREE.Scene();');
+ for(const id of ['gold','neon','ruby','cosmic','nova','titan','sol']){
+  g.run(`player=createPlayer('${id}');animateRunnerDetails(player,2000,true);`);
+  assert.equal(g.run('player.rotation.y'),Math.PI);assert.equal(g.run('player.scale.x'),1);
+  assert.ok(g.run('new THREE.Box3().setFromObject(player).getSize(new THREE.Vector3()).y<2.1'));
+ }
+ assert.equal(g.run('player.userData.cosmeticDetails[0].object.rotation.z'),0);
+});
+
+test('seeded maximum-speed runs can dodge through all six districts without a forced crash',async()=>{
+ const THREE=await import('../vendor/three.module.min.js');
+ for(const seed of [73,818,2026]){
+  const g=game(new Map(),THREE);
+  g.run(`scene=new THREE.Scene();camera=new THREE.PerspectiveCamera();isMuted=true;showMilestone=showNearMiss=checkMilestones=spawnParticles=spawnDustTrail=()=>{};
+   Math=Object.create(Math);let seed=${seed};Math.random=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/2**32);
+   const generate=spawnRow;spawnRow=(...args)=>{generate(...args);for(let i=worldObjects.length-1;i>=0;i--)if(!['obstacle','decor'].includes(worldObjects[i].type)){const obj=worldObjects.splice(i,1)[0];disposeMeshMaterials(obj.mesh);scene.remove(obj.mesh);}};
+   startGame();state.speed=CONFIG.maxSpeed;let collisions=0;requestRescue=()=>{collisions++;};
+   while(state.distance<2600){
+    const ahead=worldObjects.filter(o=>o.type==='obstacle'&&o.mesh.position.z<0).sort((a,b)=>b.mesh.position.z-a.mesh.position.z);
+    if(ahead.length&&ahead[0].mesh.position.z>-28){
+     const row=ahead.filter(o=>Math.abs(o.mesh.position.z-ahead[0].mesh.position.z)<.1);
+     const free=[-1,0,1].filter(l=>!row.some(o=>o.lane===l)).sort((a,b)=>Math.abs(a-state.lane)-Math.abs(b-state.lane));
+     if(free[0]!==state.lane)moveLane(Math.sign(free[0]-state.lane));
+    }
+    updateGame();
+   }`);
+  assert.equal(g.run('collisions'),0,`seed ${seed}`);
+  assert.equal(g.run('state.visited.length'),6);
+ }
 });
