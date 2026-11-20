@@ -22,12 +22,12 @@ Open `http://localhost:8080`. Three.js, fonts and the Supabase browser client ar
 | Collect a ringed skateboard / jetpack | Automatically skate / fly |
 | Enter or Space on the home screen | Start |
 
-Mobile also has dedicated direction and jump buttons. Swipes trigger while the finger is still moving, once per gesture. Choose Super Sensitive (10px), Snappy (14px), or Steady (24px) on the home screen; the preference is saved locally. Short taps jump, while cancelled gestures do nothing.
+Mobile also has dedicated direction and jump buttons. Swipes trigger while the finger is still moving, once per gesture. Choose Super Sensitive (10px), Snappy (14px), or Steady (24px) in Settings; the preference is saved locally. Short taps jump, while cancelled gestures do nothing.
 
 ## Gameplay and performance
 
 - Fixed 60Hz simulation keeps physics, score, combo windows and power-up durations consistent across display refresh rates. A single render loop prevents duplicate loops during rapid restarts.
-- Faster lane interpolation, a short jump input buffer, a brisk opening pace, spaced obstacle rows, and a capped maximum speed.
+- Responsive lane interpolation, a short jump input buffer, a clear opening runway and a capped maximum speed. Rows are at least 24 world units apart and expand with speed to leave 0.6 seconds between rows at top speed. Every row preserves a free route within one lane of the previous route. Swept collision checks catch hazards crossed between simulation ticks.
 - Automatic pause when the tab is hidden or the window loses focus. Resume manually to avoid surprise collisions.
 - Reused world geometry, disposal of retired player/floor resources, fewer HUD writes, and a 1.5 pixel-ratio cap with dynamic shadows disabled on touch devices.
 - Striped road barricades, traffic cones and banded barrels with individual collision widths and jump-clearance heights. All hazard geometry is cached.
@@ -58,8 +58,8 @@ Run coins, daily-streak bonuses and earned mystery-box rewards fund purchases. C
 
 - **Daily missions:** three rotating challenges track coins, distance, jumps, runs, close calls, district visits, rides or tricks. Open Missions to claim completed coin rewards once. Progress resets at local midnight and shares the same saved wallet as purchases.
 - **Near-miss chains:** pass within 0.6 units of an obstacle without touching it to build a chain. Close calls within five active-play seconds raise the score multiplier to a maximum of ×4. The game records the gap while alongside the obstacle, so moving towards it after passing cannot create a bonus.
-- **Six districts:** every 400 metres cycles through Colour City, Neon Underpass, Skyline Rooftops Sunset Boardwalk, Bamboo Gardens and Frostline Pass. Scenery, sky, ground and obstacle patterns change. District visuals crossfade over 1.5 seconds with gentle easing: the sky, fog, floor and track-edge colours blend together while the next backdrop appears. Fades freeze while paused, and retired scenery is disposed after the transition. Tunnel rows can block two lanes but preserve an adjacent safe route. Buildings, tunnel walls and railings use instanced geometry. The underpass has plain dark walls, muted posts and neutral track edges without coloured border lighting.
-- **Character personality:** nine characters have distinct entrance gestures, airborne poses and end-of-run celebrations while retaining equal gameplay abilities.
+- **Six districts:** every 400 metres cycles through Colour City, Neon Underpass, Skyline Rooftops, Sunset Boardwalk, Bamboo Gardens and Frostline Pass. Scenery, sky, ground and obstacle patterns change. District visuals crossfade over 1.5 seconds with gentle easing: the sky, fog, floor and track-edge colours blend together while the next backdrop appears. Fades freeze while paused, and retired scenery is disposed after the transition. Tunnel rows can block two lanes but preserve an adjacent safe route. Buildings, tunnel walls and railings use instanced geometry. The underpass has plain dark walls, muted posts and neutral track edges without coloured border lighting.
+- **Character personality:** species-based entrance gestures, airborne poses and end-of-run celebrations retain equal gameplay abilities. Rare and higher crews gain racing stripes, headphones, flight scarves, exosuits, space packs or a sun halo. Accessories do not change the collision rig.
 - **Skateboarding:** collect a green-ringed board, just like a coin pickup, to immediately ride for 15 seconds. No button or stored charge is required; another pickup refreshes the timer. Jump to perform kickflips, shuvits and heelflips; landing awards 15 points. An active board breaks to absorb one crash before shield protection is used. Timers freeze while paused.
 - **Jetpack:** rare pickups are spaced at least 1,200 metres apart, with a fresh cooldown after landing and no extra pickups queued during flight. Collect the orange-ringed jetpack to fly for ten seconds. Steer left/right through aerial coin trails above ground obstacles. Flight replaces skating, pauses normal jumping, and ends in a smooth protected descent with nearby hazards cleared. Timers freeze while paused; ground coins do not collect from the sky.
 - **Board designs:** Street Deck is free, Neon Rush costs 150 coins and Cosmic Cruise costs 300. Designs are permanent cosmetic purchases; all have the same duration and protection.
@@ -67,18 +67,30 @@ Run coins, daily-streak bonuses and earned mystery-box rewards fund purchases. C
 
 ## Police chase, mystery boxes and player hub
 
-- **Opening chase:** a cartoon police officer follows your lane for the first three seconds, then falls behind. It restarts each run, freezes while paused and can be disabled in Settings.
-- **Mystery boxes:** free purple track pickups first appear after 350 metres, then at least 900 metres apart. Open collected boxes from Profile after a run: 70% gives 40 coins, 25% gives 100 coins, and 5% unlocks a random non-default character. An owned character converts to 150 coins. Boxes and rewards save together; there are no paid spins.
+- **Opening chase:** a cartoon police officer follows your lane for seven seconds, gradually falling behind and fading out. A 0.9-second capture animation precedes the results; repeated starts cannot skip it. Stats bank once before the animation. The intro freezes while paused. Settings can disable chase/capture; reduced motion skips the capture sequence.
+- **Mystery boxes:** free purple track pickups first appear after 800 metres, then 1,500–2,000 metres apart. Only one box is queued at a time. Open collected boxes from Profile after a run: 70% gives 40 coins, 25% gives 100 coins, and 5% unlocks a random non-default character. An owned character converts to 150 coins. Boxes and rewards save together; there are no paid spins.
 - **Profile:** edit your runner name, see your equipped crew, coin bank, completed-run totals, best results, last five runs and a six-location discovery passport. Historical totals start with this update; existing purchases and coins remain available. A rescued run counts once when it finally ends.
-- **Settings:** separate music and effects switches, volume, mute, swipe sensitivity, graphics quality, reduced decorative motion and opening-chase preference. Settings persist independently of the wallet. Low graphics uses a 1× pixel ratio and disables shadows.
+- **Settings:** separate music and effects switches, volume, mute, swipe sensitivity, graphics quality, reduced decorative motion and opening-chase preference. Settings persist independently of the wallet. Low graphics uses a 1× pixel ratio, disables shadows, hides decorative city windows/clouds and reduces roadside decoration density.
 
-These features work offline and save in this browser. They do not provide cross-device accounts or cloud synchronisation.
+These features work offline and save in this browser. There are no cross-device accounts or cloud synchronisation.
+
+**Progress backup:** Profile → Back Up Your Progress downloads a versioned JSON wallet. Choose that file on another device, review the balance/ownership preview, then select Restore This Backup to replace that device’s wallet in one write. Invalid or oversized files are rejected before saving. Download the current wallet first if you want to retain it. Backups include coins, crew, outfits, boards, run records and daily missions. Name, settings, achievements, streak and leaderboard/device-best records are not transferred.
+
+The home menu keeps Play, Shop, Missions, Profile and Settings prominent. Profile also links to leaderboards and achievements. A browser without WebGL can still open these menus, but receives a clear explanation that running requires 3D support.
 
 ## Share a score image
 
 After a run, **Share Image** previews a 1080 × 1350 PNG card with your score, coins, name, run character and the current game URL. Choose **Share Image** again to send the prepared PNG through the device share sheet when file sharing is supported. Choose **Download Image** to save it, or long-press the preview on mobile and attach it manually.
 
 The card is drawn locally from original vector artwork; no screenshot permissions, external image service or remote image loading are required. Text/link sharing remains in an expandable fallback. Cancelling native sharing leaves the preview available. Buying a new character after a run does not change that run's card.
+
+## Source layout
+
+- `runner-rules.js`: row planning, spacing, swept collisions and box cooldowns.
+- `controls.js` and `audio.js`: gestures and generated audio with explicit dependencies.
+- `chase.js` and `character-details.js`: cosmetic police and character details.
+- `player-meta.js`, `save-data.js` and `progression.js`: records, wallet backups and progression data.
+- `script.js`: Three.js scene, gameplay integration, menus and existing sharing/leaderboard flows.
 
 ## Checks
 
@@ -92,4 +104,4 @@ node --check player-meta.js
 node --test tests/*.test.*
 ```
 
-The tests include profile totals, box reward thresholds, duplicate conversion, storage failures, settings persistence and a real Three.js run through all nine characters, the police intro, six districts, box pickup, final stats and restart. They also include real Three.js regression checks for district crossfades, final material restoration and interrupted-transition cleanup, as well as complete offline shell installation/reload with mocked networking, failed downloads, cache cleanup, API exclusion, readiness UI, rare jetpack spacing, device-best persistence, shop scroll reset, outfit purchases/persistence, automatic board/jetpack pickup, flight expiry and vertical coin collection, daily rollover and reward claims, board purchases, near-miss chains, rescue payment/countdown, image generation and export failure paths, native file-share capability/cancellation/denial, download and copy fallbacks, stale previews, wallet migration, purchases, persistence, insufficient funds and storage failures, plus existing input/physics/timing regressions. They use a small DOM/rendering harness; physical-device share-sheet behaviour still requires device testing.
+The checks include 12,000 seeded obstacle rows and three 2,600-metre runs through all six districts at maximum speed without jumps or protective pickups. They cover character rigs, police capture/restarts, reward persistence, wallet migration, save-file validation, settings/audio, sharing failure paths and the complete offline module graph. See [QA notes](docs/QA.md) for completed browser checks and remaining device validation.

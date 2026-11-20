@@ -1241,3 +1241,24 @@ button:disabled { cursor:default; opacity:.55; transform:none; box-shadow:none; 
 @media(max-width:600px){.profile-stats {grid-template-columns:repeat(2,minmax(0,1fr));}.profile-identity {grid-template-columns:90px 1fr;gap:12px;}.profile-identity img {width:90px;height:130px;}.profile-identity input {font-size:16px;}.location-grid {grid-template-columns:1fr;}#chase-banner {top:182px;left:16px;font-size:8px;}.profile-runs li {font-size:10px;}.hub-panel {padding:22px 15px;}.setting-row {font-size:11px;}.setting-row select {max-width:145px;}#profile-btn,#settings-btn {font-size:9px;padding:11px 9px;}}
 
 @media(max-width:600px) and (max-height:850px){#start-screen {justify-content:flex-start;padding-top:100px;padding-bottom:45px;}}
+
+#graphics-status {width:min(100%,620px);background:#ffe448;color:#202437;border:2px solid;border-radius:12px;padding:12px;margin:12px 0;font-size:14px;line-height:1.5;text-align:center;}
+
+/* Focused menus: Play first, collection tools grouped in the profile. */
+#start-screen .screen-btn-row {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:min(650px,100%);gap:12px;margin:24px 0 10px;}
+#start-screen .screen-btn-row button {font:700 14px var(--pixel-font);padding:15px 12px;min-height:50px;border-radius:14px;}
+#start-screen .play-tips {gap:20px;flex-wrap:wrap;justify-content:center;}.play-tips span {font-size:12px;}
+.profile-links,.result-actions {display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:20px 0;}
+.profile-links button,.result-actions button,#export-progress-btn,#restore-progress-btn {font:700 14px var(--pixel-font);padding:13px 16px;min-height:46px;border-radius:12px;}
+.result-actions button {background:var(--yellow);}.result-extras {width:100%;margin-top:12px;}.result-extras summary,.backup-panel summary {font-size:14px;font-weight:700;cursor:pointer;padding:14px;min-height:46px;border:2px solid;border-radius:12px;background:white;}
+.result-extras .screen-btn-row {display:grid;grid-template-columns:1fr 1fr;margin-top:15px;}.result-extras button {font-size:12px;padding:12px;}
+.backup-panel {margin:24px 0;text-align:left;}.backup-panel p {font-size:14px;line-height:1.6;margin:14px 0;}.backup-panel label {display:block;margin:20px 0 8px;font-size:14px;font-weight:700;}.backup-panel input {max-width:100%;font-size:14px;user-select:text;}.backup-panel button {background:var(--lime);}
+.hub-panel .feature-note,.hub-panel .box-cabinet p {font-size:14px;}.hub-panel .box-cabinet .box-odds {font-size:12px;}.hub-panel .setting-row {font-size:14px;}.hub-panel .setting-row select {font-size:13px;}.hub-panel .profile-stats span {font-size:11px;}.hub-panel .location-card h4 {font-size:14px;}.hub-panel .location-card p {font-size:13px;}.hub-panel .location-card small {font-size:11px;}.hub-panel #profile-crew {font-size:12px;}
+.rarity-chip {font-size:11px!important;}.character-card .character-price {font-size:13px;}
+@media(max-width:600px){#start-screen .screen-btn-row {grid-template-columns:1fr 1fr;gap:10px;width:min(360px,100%);margin:20px 0 8px;}#start-screen .screen-btn-row button {font-size:13px;padding:13px 10px;}.profile-stats {grid-template-columns:1fr 1fr;}.profile-links {gap:8px;}.profile-links button {font-size:12px;}.result-actions {gap:8px;}.result-actions button {font-size:12px;padding:12px 10px;}.setting-row {flex-wrap:wrap;}.hub-panel .setting-row select {max-width:165px;}.profile-identity {grid-template-columns:80px minmax(0,1fr);}.profile-identity img {width:80px;}.profile-identity input {max-width:100%;}.play-tips {margin-top:18px;}.play-tips span {font-size:11px;}}
+@media(max-width:600px) and (max-height:720px){#start-screen {padding-top:95px;}.title {font-size:clamp(52px,15vw,78px);}.hopper-mascot {display:none;}#start-screen .subtitle {font-size:15px;margin-bottom:12px;}#start-screen .screen-btn-row {margin-top:16px;}}
+
+.hub-close {position:sticky;top:0;float:right;z-index:5;font:700 12px var(--pixel-font)!important;padding:9px 12px!important;min-height:40px;border-radius:10px;background:var(--paper);margin:0 0 8px 8px!important;}
+@media(max-width:600px){body:not(.running) #mute-btn {top:82px;right:16px;bottom:auto;width:36px;height:36px;padding:6px;font-size:18px;}}
+
+.loading #ui-layer button,.loading #ui-layer select {pointer-events:none;}

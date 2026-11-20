@@ -1,10 +1,10 @@
 // Bump the shell version when changing the offline asset list. Online visits
 // refresh cached files too, so future app fixes do not get stuck behind a cache.
-const CACHE_NAME='super-hopper-offline-v2';
+const CACHE_NAME='super-hopper-offline-v3';
 const ROOT=new URL('./',self.registration.scope);
 const INDEX=new URL('./index.html',ROOT).href;
 const SHELL=[
- './index.html','./style.css','./script.js','./game-art.js','./progression.js','./player-meta.js',
+ './index.html','./style.css','./script.js','./game-art.js','./progression.js','./player-meta.js','./runner-rules.js','./chase.js','./character-details.js','./save-data.js','./audio.js','./controls.js',
  './supabase.js','./config.js','./offline.js','./manifest.webmanifest',
  './vendor/three.module.min.js','./vendor/supabase.min.js',
  './fonts/fredoka-latin.woff2','./fonts/space-grotesk-latin.woff2',

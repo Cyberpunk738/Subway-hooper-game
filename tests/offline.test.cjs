@@ -95,3 +95,14 @@ test('an already installed offline game does not depend on re-registering over t
  page.run('navigator.onLine=false');assert.equal(await page.run('setupOffline()'),true);
  assert.equal(registered,false);assert.equal(page.badge.textContent,'PLAYING OFFLINE');
 });
+
+test('every relative game module is included in the offline shell',()=>{
+ const w=worker(),shell=new Set(vm.runInContext('SHELL',w.context).map(url=>new URL(url).pathname.replace('/game/','')));
+ const seen=new Set(),queue=['script.js','offline.js'];
+ while(queue.length){
+  const file=queue.pop();if(seen.has(file))continue;seen.add(file);assert.ok(shell.has(file),file);
+  const source=fs.readFileSync(path.join(ROOT,file),'utf8');
+  for(const match of source.matchAll(/(?:from\s*|import\s*)['"]\.\/([^'"]+)['"]/g))queue.push(path.posix.normalize(path.posix.join(path.posix.dirname(file),match[1])));
+ }
+ assert.ok(seen.has('runner-rules.js'));assert.ok(seen.has('save-data.js'));assert.ok(seen.has('controls.js'));
+});
