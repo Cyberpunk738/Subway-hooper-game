@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RARITY_COLORS, normalizeSettings, normalizeProfile, recordRun, mysteryReward, redeemMysteryBox } from "./player-meta.js";
 import { JETPACK_SPACING, jetpackReady, OUTFITS, BOARDS, RESCUE_COST, DISTRICTS, MISSION_POOL, localDay, missionsForDay, dailyProgress, dangerMultiplier, boardSVG } from "./progression.js";
 import { CHARACTERS, portraitSVG, renderScoreCard } from "./game-art.js";
 import {
@@ -120,7 +121,7 @@ function readWallet() {
 	return { bank: Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(wallet.bank) || 0))), owned, selected: owned.includes(wallet.selected) ? wallet.selected : "default",
 		boards: [...new Set(["street", ...(Array.isArray(wallet.boards) ? wallet.boards : []).filter(id => BOARDS.some(b => b.id === id))])],
 		board: Array.isArray(wallet.boards) && wallet.boards.includes(wallet.board) && BOARDS.some(b => b.id === wallet.board) ? wallet.board : "street",
-		daily: dailyProgress(wallet.daily),
+		daily: dailyProgress(wallet.daily),profile:normalizeProfile(wallet.profile),
   outfits:Object.fromEntries(SKINS.map(c=>[c.id,[...new Set(["original",...(Array.isArray(wallet.outfits?.[c.id])?wallet.outfits[c.id]:[]).filter(id=>OUTFITS.some(o=>o.id===id))])]])),
   selectedOutfits:Object.fromEntries(SKINS.map(c=>[c.id,Array.isArray(wallet.outfits?.[c.id])&&wallet.outfits[c.id].includes(wallet.selectedOutfits?.[c.id])&&OUTFITS.some(o=>o.id===wallet.selectedOutfits[c.id])?wallet.selectedOutfits[c.id]:"original"])) };
 }
@@ -176,7 +177,8 @@ function ensureAudio() {
 	return audioCtx;
 }
 
-function playTone(freq, duration, type = "square", volume = 0.15) {
+function playTone(freq, duration, type = "square", volume = 0.15, channel="effects") {
+ const p=getPreferences();if(channel==="music"?!p.music:!p.effects)return;volume*=p.volume;if(volume<=0)return;
 	try {
 		const ctx = ensureAudio();
 		if (!ctx) return;
@@ -306,6 +308,7 @@ let shieldVisual = null; // Shield bubble around player
 let particles = [];
 
 function spawnParticles(position, color, count = 8, spread = 0.5, life = 30) {
+ if(getPreferences().reducedMotion)return;
 	for (let i = 0; i < count; i++) {
 		const geo = getCachedGeos().particle;
 		const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
@@ -655,16 +658,16 @@ const BASS_NOTES = [130.81, 130.81, 164.81, 146.83];
 const ARP_NOTES = [523.25, 659.25, 783.99, 659.25, 523.25, 392.00, 523.25, 659.25];
 
 function startMusic() {
-	if (isMuted || musicInterval) return;
+	if (isMuted || !getPreferences().music || musicInterval) return;
 	musicBeat = 0;
 	const beatMs = Math.floor(60000 / 140 / 2);
 	musicInterval = setInterval(() => {
 		if (!state.isPlaying || isMuted) { stopMusic(); return; }
 		try {
 			if (musicBeat % 4 === 0) {
-				playTone(BASS_NOTES[(musicBeat / 4) % BASS_NOTES.length], 0.15, "triangle", 0.05);
+				playTone(BASS_NOTES[(musicBeat / 4) % BASS_NOTES.length], 0.15, "triangle", 0.05, "music");
 			}
-			playTone(ARP_NOTES[musicBeat % ARP_NOTES.length], 0.08, "square", 0.025);
+			playTone(ARP_NOTES[musicBeat % ARP_NOTES.length], 0.08, "square", 0.025, "music");
 			musicBeat++;
 		} catch (e) { /* silent */ }
 	}, beatMs);
@@ -675,12 +678,7 @@ function stopMusic() {
 }
 
 function toggleMute() {
-	isMuted = !isMuted;
-	localStorage.setItem(MUTE_KEY, isMuted ? "1" : "0");
-	const btn = document.getElementById("mute-btn");
-	if (btn) btn.textContent = isMuted ? "🔇" : "🔊";
-	if (isMuted) stopMusic();
-	else if (state.isPlaying) startMusic();
+ savePreferences({...getPreferences(),muted:!getPreferences().muted});
 }
 
 // =============================================
@@ -747,7 +745,7 @@ function renderShop() {
 		const disabled = selected || (!owned && missing > 0);
 		return `<article class="character-card ${selected ? "character-equipped" : ""}">
 			<button class="character-art character-preview" data-preview="${character.id}" aria-label="View ${character.name} and outfits" style="--character-color:#${character.color.toString(16).padStart(6,"0")}"><img alt="${character.species} character ${character.name}" src="data:image/svg+xml,${encodeURIComponent(portraitSVG(character,outfitAppearance(character.id)))}" /></button>
-			<div class="character-meta"><h3>${character.name}</h3><span>${character.species.toUpperCase()}</span></div>
+			<div class="character-meta"><h3>${character.name}</h3><span class="rarity-chip" style="background:${RARITY_COLORS[character.rarity]}">${character.rarity.toUpperCase()}</span></div>
 			<p>${character.tagline}</p><div class="character-price">${owned ? "OWNED" : `🪙 ${character.cost} COINS`}</div>
 			<button data-character="${character.id}" ${disabled ? "disabled" : ""}>${label}</button></article>`;
 	}).join("");
@@ -1237,7 +1235,7 @@ function endFlight(safeLanding=true) {
 
 // --- MISSIONS, SKATING, DISTRICTS AND RESCUE ---
 function freshRunFeatures() {
- return {distance:0,pendingDistance:0,districtIndex:0,safeLane:0,runTicks:0,
+ return {nextBoxDistance:350,boxesCollected:0,chaseTicks:0,visited:[DISTRICTS[0].pattern],distance:0,pendingDistance:0,districtIndex:0,safeLane:0,runTicks:0,
   dangerChain:0,dangerTimer:0,boardTicks:0,boardSpawnRows:11,
  flightTicks:0,flightLanding:false,nextJetpackDistance:JETPACK_SPACING,flightPath:0,
   jumpTicks:0,tricks:0,rescueUsed:false,countdownTicks:0,invulnerableTicks:0};
@@ -1344,6 +1342,7 @@ function updateFeatureHUD() {
 }
 function updateRunFeatures() {
  state.runTicks++;
+ updatePursuer();
  if(state.invulnerableTicks>0)state.invulnerableTicks--;
  if(state.dangerTimer>0&&--state.dangerTimer===0){state.dangerChain=0;updateFeatureHUD();}
  if(state.boardTicks>0&&--state.boardTicks===0)endBoard();
@@ -1362,6 +1361,7 @@ function enterDistrict(index) {
  finishDistrictTransition();
  const outgoing=floorGroups.filter(group=>group.userData.districtBackdrop);
  state.districtIndex=index;state.theme=DISTRICTS[index];
+ if(!state.visited.includes(state.theme.pattern))state.visited.push(state.theme.pattern);
  const transition={
   fromSky:scene.background.clone(),toSky:new THREE.Color(state.theme.sky),
   fromGround:floorGroups[0].material.color.clone(),toGround:new THREE.Color(state.theme.ground),
@@ -1398,6 +1398,17 @@ function createDistrictScenery(index) {
    add(side*4.7,0.4,-42,0.18,0.8,115,0xb797ff);
    for(let i=0;i<5;i++){add(side*7,1.7,-12-i*20,0.12,3.4,0.12,0x303e5d);add(side*7,3.1,-12-i*20,2.6,0.12,0.12,0x303e5d);}
   }
+ }else if(index===4){
+  for(const side of [-1,1])for(let i=0;i<18;i++){
+   const x=side*(6+i%3*1.5),z=12-i*7;
+   add(x,2.5,z,0.22,5+i%3,0.22,0x6b9a48);
+   add(x,1.5,z,0.26,0.08,0.26,0xe0d68e);add(x,3,z,0.26,0.08,0.26,0xe0d68e);
+  }
+  for(const z of [-18,-58]){add(0,7,z,10,0.25,0.3,0xb6624a);for(const side of [-1,1])add(side*4.8,3.4,z,0.3,6.8,0.3,0xb6624a);}
+ }else if(index===5){
+  const mountains=new THREE.InstancedMesh(geo.obstacleCone,new THREE.MeshStandardMaterial({color:0xeaf5ff,flatShading:true}),18),t=new THREE.Object3D();
+  for(let i=0;i<18;i++){t.position.set((i%2?1:-1)*(13+i%3*3),2.5,-i*7);t.scale.set(12,10+i%4*2,12);t.updateMatrix();mountains.setMatrixAt(i,t.matrix);}group.add(mountains);
+  for(const side of [-1,1])for(let i=0;i<12;i++)add(side*4.7,0.35,10-i*10,0.18,0.7,0.18,0xe75b63);
  }else{
   for(const side of [-1,1]){
    add(side*13,-0.4,-42,17,0.1,130,0x71bcce);
@@ -1433,7 +1444,7 @@ function rescueRun() {
  updateBankDisplay();lastTime=performance.now();accumulator=0;ensureLoop();return true;
 }
 function updateCelebration() {
- if(!player?.userData?.limbs||celebrationTicks<=0)return;
+ if(getPreferences().reducedMotion||!player?.userData?.limbs||celebrationTicks<=0)return;
  celebrationTicks--;
  const species=SKINS.find(c=>c.id===player.userData.characterId).species,phase=celebrationTicks/90;
  const styles={bunny:[0.35,0.4,1],bear:[0.12,1.1,0.3],fox:[0.2,0.35,2],robot:[0.05,0.05,0],cat:[0.18,0.7,-1],astronaut:[0.32,0.9,0.5]};
@@ -1458,6 +1469,117 @@ function initRunnerFeatures() {
   if(e.key==='Tab'){const rescue=document.getElementById('rescue-btn'),end=document.getElementById('end-run-btn');e.preventDefault();(document.activeElement===end&&!rescue.disabled?rescue:end).focus();}
  });
  window.addEventListener('pagehide',flushDistanceMission);
+}
+
+// Player hub, earned rewards and preferences all persist on this device.
+const SETTINGS_KEY='super_hopper_settings_v1';
+let preferences=null,pursuer=null,hubReturnFocus=null;
+function getPreferences(){
+ if(preferences)return preferences;
+ let saved;try{saved=JSON.parse(localStorage.getItem(SETTINGS_KEY));}catch{}
+ preferences=normalizeSettings({...saved,sensitivity:saved?.sensitivity??(Number(localStorage.getItem('hopper_sensitivity'))||14)},localStorage.getItem(MUTE_KEY)==='1');
+ return preferences;
+}
+function savePreferences(next){
+ const value=normalizeSettings(next);
+ try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(value));}catch{return false;}
+ preferences=value;isMuted=value.muted;swipeThreshold=value.sensitivity;
+ // Compatibility for the existing home-screen controls.
+ try{localStorage.setItem(MUTE_KEY,isMuted?'1':'0');localStorage.setItem('hopper_sensitivity',String(value.sensitivity));}catch{}
+ applyPreferences();return true;
+}
+function applyPreferences(){
+ const p=getPreferences();document.body.classList.toggle('reduced-motion',p.reducedMotion);
+ document.getElementById('sensitivity').value=String(p.sensitivity);
+ document.getElementById('mute-btn').textContent=p.muted?'🔇':'🔊';
+ if(renderer){renderer.setPixelRatio(p.quality==='low'?1:Math.min(window.devicePixelRatio||1,p.quality==='high'?2:isTouchDevice()?1.5:2));renderer.shadowMap.enabled=p.quality==='high'||p.quality==='auto'&&!isTouchDevice();renderer.setSize(window.innerWidth,window.innerHeight);}
+ if(p.muted||!p.music)stopMusic();else if(state.isPlaying&&!paused&&!state.countdownTicks)startMusic();
+}
+function fillSettings(){
+ const p=getPreferences();
+ for(const key of ['muted','music','effects','reducedMotion','chaseIntro'])document.getElementById('setting-'+key).checked=p[key];
+ document.getElementById('setting-volume').value=String(p.volume*100);document.getElementById('setting-quality').value=p.quality;document.getElementById('setting-sensitivity').value=String(p.sensitivity);
+}
+function saveSettingsForm(){
+ const next={};for(const key of ['muted','music','effects','reducedMotion','chaseIntro'])next[key]=document.getElementById('setting-'+key).checked;
+ next.volume=Number(document.getElementById('setting-volume').value)/100;next.quality=document.getElementById('setting-quality').value;next.sensitivity=Number(document.getElementById('setting-sensitivity').value);
+ document.getElementById('settings-status').textContent=savePreferences(next)?'Settings saved on this device.':'Could not save settings. Please allow site storage.';
+}
+function openHub(which){
+ if(state.isPlaying)return;
+ hubReturnFocus=document.activeElement;
+ if(which==='profile')renderProfile();else fillSettings();
+ const overlay=document.getElementById(which+'-overlay');overlay.classList.remove('hidden');overlay.querySelector('.hub-panel').scrollTop=0;
+ document.getElementById('close-'+which+'-btn').focus({preventScroll:true});
+}
+function closeHub(which){document.getElementById(which+'-overlay').classList.add('hidden');hubReturnFocus?.focus({preventScroll:true});}
+function renderProfile(){
+ const wallet=readWallet(),p=wallet.profile,character=SKINS.find(c=>c.id===wallet.selected);
+ document.getElementById('profile-name').value=currentUsername||getSavedUsername()||'Runner';
+ document.getElementById('profile-avatar').src=`data:image/svg+xml,${encodeURIComponent(portraitSVG(character,outfitAppearance(character.id)))}`;
+ document.getElementById('profile-crew').textContent=`${character.name} · ${character.rarity.toUpperCase()} · ${wallet.owned.length}/${SKINS.length} CREW`;
+ const values=[['BEST SCORE',p.bestScore],['BEST DISTANCE',p.bestDistance+'m'],['RUNS',p.runs],['TOTAL DISTANCE',p.distance+'m'],['COINS COLLECTED',p.coins],['TRICKS LANDED',p.tricks],['CLOSE CALLS',p.near],['COIN BANK',wallet.bank]];
+ document.getElementById('profile-stats').innerHTML=values.map(([label,value])=>`<div><b>${value}</b><span>${label}</span></div>`).join('');
+ document.getElementById('profile-locations').innerHTML=DISTRICTS.map(d=>`<article class="location-card ${p.visited.includes(d.pattern)?'visited':''}"><h4>${d.name}</h4><p>${d.description}</p><small>${p.visited.includes(d.pattern)?'EXPLORED':'DISCOVER ON YOUR NEXT RUN'}</small></article>`).join('');
+ document.getElementById('profile-runs').innerHTML=p.recent.length?p.recent.map(r=>`<li><b>${r.score.toLocaleString()} points</b><span>${r.distance}m · ${r.coins} coins</span></li>`).join(''):'<li>Your next run starts your record book.</li>';
+ document.getElementById('open-box-btn').disabled=p.boxes<1;document.getElementById('open-box-btn').textContent=`OPEN MYSTERY BOX · ${p.boxes} READY`;
+ document.getElementById('profile-opened').textContent=`${p.opened} boxes opened · rewards are free earned pickups`;
+}
+function collectMysteryBox(){
+ const wallet=readWallet();wallet.profile.boxes++;
+ try{writeWallet(wallet);}catch{return false;}
+ state.boxesCollected++;showMilestone('MYSTERY BOX · OPEN AFTER YOUR RUN');return true;
+}
+function openMysteryBox(){
+ const wallet=readWallet(),reward=mysteryReward(Math.random(),Math.random(),SKINS),result=redeemMysteryBox(wallet,reward);
+ if(!result)return false;
+ try{writeWallet(result.wallet);}catch{document.getElementById('box-result').textContent='Could not save this reward. Your box is still available.';return false;}
+ renderProfile();updateBankDisplay();
+ const text=result.reward.kind==='character'?`${result.reward.rarity.toUpperCase()} CREW UNLOCKED · ${result.reward.label}`:result.reward.label;
+ document.getElementById('box-result').textContent=text;return true;
+}
+function saveProfileName(){
+ const name=document.getElementById('profile-name').value.trim();
+ if(!/^[a-zA-Z0-9 _-]{2,16}$/.test(name)){document.getElementById('profile-status').textContent='Use 2–16 letters, numbers, spaces, underscores or dashes.';return;}
+ try{saveUsername(name);currentUsername=name;updateBadgeName();document.getElementById('profile-status').textContent='Name saved. Future runs use this name.';}catch{document.getElementById('profile-status').textContent='Could not save the name.';}
+}
+function createMysteryBox(){
+ const group=new THREE.Group(),geo=getCachedGeos();
+ const box=new THREE.Mesh(geo.unitBox,new THREE.MeshStandardMaterial({color:0xa68cff,roughness:0.6}));box.scale.set(0.65,0.65,0.65);group.add(box);
+ const bandMaterial=new THREE.MeshBasicMaterial({color:0xffe448});
+ for(const axis of [0,1]){const band=new THREE.Mesh(geo.unitBox,bandMaterial);band.scale.set(axis?0.68:0.12,0.69,axis?0.12:0.68);group.add(band);}
+ addPickupRing(group,0xffe448);return group;
+}
+function clearPursuer(){if(pursuer){scene.remove(pursuer);disposeMeshMaterials(pursuer);pursuer=null;}document.getElementById('chase-banner').classList.add('hidden');}
+function startPursuer(){
+ clearPursuer();if(!getPreferences().chaseIntro)return;
+ const group=new THREE.Group(),geo=getCachedGeos(),blue=new THREE.MeshStandardMaterial({color:0x284a8b}),skin=new THREE.MeshStandardMaterial({color:0xffd4a9}),dark=new THREE.MeshStandardMaterial({color:0x1f2945}),white=new THREE.MeshBasicMaterial({color:0xfff4da});
+ const part=(g,m,x,y,z,sx,sy,sz)=>{const mesh=new THREE.Mesh(g,m);mesh.position.set(x,y,z);mesh.scale.set(sx,sy,sz);group.add(mesh);return mesh;};
+ part(geo.characterBody,blue,0,0.55,0,1.1,1.1,1);
+ part(geo.rounded,skin,0,1.04,0,0.34,0.33,0.3);part(geo.unitBox,blue,0,1.31,0,0.7,0.13,0.6);part(geo.unitBox,dark,0,1.26,0.27,0.65,0.06,0.28);
+ // White back patch and gold badge make the uniform readable from the chase camera.
+ part(geo.unitBox,white,0,0.63,-0.31,0.45,0.13,0.025);part(geo.rounded,new THREE.MeshBasicMaterial({color:0xffd85c}),-0.17,0.64,0.31,0.06,0.08,0.025);
+ const limbs=[];for(const side of [-1,1]){const arm=part(geo.rounded,blue,side*0.42,0.5,0,0.12,0.28,0.12),leg=part(geo.rounded,dark,side*0.17,0.16,0,0.13,0.22,0.13);limbs.push({arm,leg,side});}
+ group.userData.limbs=limbs;group.rotation.y=Math.PI;group.scale.setScalar(0.9);group.position.set(-0.65,0,1.8);
+ scene.add(group);pursuer=group;state.chaseTicks=180;document.getElementById('chase-banner').classList.remove('hidden');
+}
+function updatePursuer(){
+ if(!pursuer)return;
+ const t=1-state.chaseTicks/180;state.chaseTicks--;
+ pursuer.position.x+=(state.currentLaneX-0.65-pursuer.position.x)*0.08;pursuer.position.z=1.8+t*t*11;
+ if(!getPreferences().reducedMotion){pursuer.position.y=Math.abs(Math.sin(state.runTicks*0.28))*0.08;for(const {arm,leg,side} of pursuer.userData.limbs){arm.rotation.x=Math.sin(state.runTicks*0.3)*side*0.8;leg.rotation.x=-arm.rotation.x;}}
+ if(state.chaseTicks<=0)clearPursuer();
+}
+function initPlayerHub(){
+ getPreferences();applyPreferences();
+ for(const page of ['profile','settings']){
+  for(const id of [page+'-btn',page+'-btn-go'])document.getElementById(id).addEventListener('click',()=>openHub(page));
+  document.getElementById('close-'+page+'-btn').addEventListener('click',()=>closeHub(page));
+  document.getElementById(page+'-overlay').addEventListener('click',e=>{if(e.target.id===page+'-overlay')closeHub(page);});
+  document.getElementById(page+'-overlay').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeHub(page);}if(e.key==='Tab'){const items=[...e.currentTarget.querySelectorAll('button:not(:disabled),input,select')],first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
+ }
+ document.getElementById('open-box-btn').addEventListener('click',openMysteryBox);document.getElementById('save-profile-btn').addEventListener('click',saveProfileName);
+ document.getElementById('save-settings-btn').addEventListener('click',saveSettingsForm);
 }
 
 // --- INIT ---
@@ -1519,6 +1641,7 @@ function init() {
 	initRunSettings();
 	initRunnerFeatures();
  initWardrobe();
+ initPlayerHub();
 	// UI Handlers
 	document.getElementById("start-btn").addEventListener("click", startGame);
 	document.getElementById("restart-btn").addEventListener("click", startGame);
@@ -1536,7 +1659,7 @@ function init() {
 	const muteBtnInit = document.getElementById("mute-btn");
 	if (muteBtnInit) {
 		muteBtnInit.addEventListener("click", toggleMute);
-		isMuted = localStorage.getItem(MUTE_KEY) === "1";
+		isMuted = getPreferences().muted;
 		muteBtnInit.textContent = isMuted ? "🔇" : "🔊";
 	}
 
@@ -1659,6 +1782,14 @@ function createPlayer(characterId=getSelectedSkin(),preview=false) {
 			if (skin.species === "fox") part(geo.rounded, cream, 0, 0.56, -0.64, 0.14, 0.1, 0.12);
 		}
 	}
+ if(skin.variant==='goggles'){
+  part(geo.unitBox,ink,0,1.05,0.36,0.63,0.18,0.04);
+  for(const side of [-1,1])part(geo.rounded,accent,side*0.16,1.05,0.39,0.1,0.07,0.02);
+ }else if(skin.variant==='armor'){
+  for(const side of [-1,1])part(geo.unitBox,accent,side*0.39,0.72,0,0.22,0.2,0.34);
+ }else if(skin.variant==='crown'){
+  for(const x of [-0.25,0,0.25])part(geo.obstacleCone,accent,x,1.6,0,0.2,0.3,0.2);
+ }
 	// A cross-body bag adds a contrasting detail at game scale.
 	// Back seam and a small hoodie patch remain visible from the chase camera.
 	part(geo.unitBox, cream, 0, 0.53, -0.28, 0.13, 0.16, 0.025);
@@ -1706,7 +1837,7 @@ function animateCharacter() {
 	};
 	const pose = poses[species];
 	const stride = Math.sin(simulationTime * 0.022) * 0.65;
-	const entrance = Math.max(0, 1 - state.runTicks / 60);
+	const entrance = getPreferences().reducedMotion?0:Math.max(0, 1 - state.runTicks / 60);
 	const wave = Math.sin(entrance * Math.PI) * pose.entry;
 	player.scale.set(1 + wave * 0.08, 1 - wave * 0.04, 1 + wave * 0.08);
 	player.rotation.z += wave * pose.tilt;
@@ -1915,7 +2046,7 @@ function spawnRow(zStart = -60) {
 		} else blocked = [lane];
 		obstacleLane = blocked[0];
 		for (const blockedLane of blocked) {
-			const kind = state.districtIndex === 2 ? 0 : state.districtIndex === 3 ? 2 : Math.floor(Math.random() * 3);
+			const kind = state.districtIndex === 2 ? 0 : state.districtIndex === 3 || state.districtIndex === 5 ? 2 : state.districtIndex === 4 ? 1 : Math.floor(Math.random() * 3);
 			const obs = createObstacleMesh(kind);
 			obs.position.set(blockedLane * CONFIG.laneWidth, 0, zStart);
 			scene.add(obs);
@@ -1957,6 +2088,11 @@ function spawnRow(zStart = -60) {
 	}
  if(jetpackReady(state,worldObjects.some(obj=>obj.type==="jetpack"))){state.nextJetpackDistance=state.distance+JETPACK_SPACING;const pickup=createJetpack();addPickupRing(pickup,0xff9843);pickup.position.set(([-1,0,1].find(l=>!blocked.includes(l)))*CONFIG.laneWidth,1.1,zStart-4);scene.add(pickup);worldObjects.push({mesh:pickup,type:"jetpack"});}
  if(state.flightTicks>100)spawnAirCoins(zStart);
+
+ if(state.distance>=state.nextBoxDistance&&!state.flightTicks&&!state.flightLanding&&!worldObjects.some(obj=>obj.type==='mystery')){
+  state.nextBoxDistance=state.distance+900;
+  const box=createMysteryBox();box.position.set(([-1,0,1].find(l=>!blocked.includes(l)))*CONFIG.laneWidth,1.1,zStart-2);scene.add(box);worldObjects.push({mesh:box,type:'mystery'});
+ }
 
 }
 
@@ -2104,6 +2240,7 @@ function startGame() {
 
 	for (let z = -22; z >= -60; z -= 15) spawnRow(z);
 
+	startPursuer();
 	// A single animation loop owns simulation, rendering and death effects.
 	lastTime = performance.now();
 	accumulator = 0;
@@ -2120,6 +2257,7 @@ function goHome() {
 function gameOver() {
 	if (!state.isPlaying) return;
 	flushDistanceMission();
+ clearPursuer();
 	rescuePending = false;
 	paused = false;
 	document.getElementById("rescue-overlay").classList.add("hidden");
@@ -2165,8 +2303,11 @@ function gameOver() {
 	stopMusic();
 
 	// Save coins to bank and update display
-	saveCoinBank(getCoinBank() + state.coins);
-	updateBankDisplay();
+ const wallet=readWallet();
+ wallet.bank+=state.coins;
+ wallet.profile=recordRun(wallet.profile,{...state,visited:state.visited,characterId:player?.userData.characterId,date:new Date().toISOString()});
+ try{writeWallet(wallet);document.getElementById('result-progress').textContent=state.boxesCollected?`${state.boxesCollected} MYSTERY BOX COLLECTED · OPEN IN PROFILE`:"Run saved. Check your records in Profile.";}catch{document.getElementById('result-progress').textContent='Could not save this run. Allow site storage for progress.';}
+ updateBankDisplay();
 
 	// Characters are bought with banked coins; scores never bypass the shop.
 
@@ -2190,7 +2331,7 @@ function requestJump() {
 	if (state.isPlaying && !paused && !state.countdownTicks && !state.flightTicks && !state.flightLanding) jumpBuffer = 8;
 }
 function overlayOpen() {
-	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay"), document.getElementById("share-overlay"), document.getElementById("missions-overlay"), document.getElementById("rescue-overlay")]
+	return [uiUsernameModal, uiLeaderboardOverlay, document.getElementById("shop-overlay"), document.getElementById("badges-overlay"), document.getElementById("share-overlay"), document.getElementById("missions-overlay"), document.getElementById("rescue-overlay"),document.getElementById("profile-overlay"),document.getElementById("settings-overlay")]
 		.some(el => !el.classList.contains("hidden"));
 }
 function handleInput(e) {
@@ -2257,7 +2398,7 @@ function initRunSettings() {
 	sensitivity.value = String(swipeThreshold);
 	sensitivity.addEventListener("change", () => {
 		swipeThreshold = Number(sensitivity.value);
-		localStorage.setItem("hopper_sensitivity", String(swipeThreshold));
+		savePreferences({...getPreferences(),sensitivity:swipeThreshold});
 	});
 	document.getElementById("pause-btn").addEventListener("click", () => togglePause());
 	document.getElementById("resume-btn").addEventListener("click", () => togglePause(false));
@@ -2501,6 +2642,13 @@ function updateGame() {
   if(obj.type==="jetpack"){
    obj.mesh.rotation.y+=0.025;
    if(Math.abs(obj.mesh.position.z)<1&&Math.abs(player.position.x-obj.mesh.position.x)<1&&state.playerY<1.3&&!state.flightTicks&&!state.flightLanding){activateFlight();disposeMeshMaterials(obj.mesh);scene.remove(obj.mesh);worldObjects.splice(i,1);continue;}
+  }
+
+  if(obj.type==='mystery'){
+   obj.mesh.rotation.y+=0.025;
+   if(Math.abs(obj.mesh.position.z)<1&&Math.abs(player.position.x-obj.mesh.position.x)<1&&state.playerY<1.3&&collectMysteryBox()){
+    disposeMeshMaterials(obj.mesh);scene.remove(obj.mesh);worldObjects.splice(i,1);continue;
+   }
   }
 
 		// Power-up Collection

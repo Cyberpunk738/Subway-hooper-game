@@ -82,6 +82,31 @@
 		</section>
 	</div>
 
+ <div id="profile-overlay" class="hidden feature-overlay">
+  <section class="feature-panel hub-panel" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+   <p class="eyebrow">YOUR RUNNER STORY</p><h2 id="profile-title">PLAYER PROFILE</h2><p class="feature-note">Saved on this device · works offline</p>
+   <div class="profile-identity"><img id="profile-avatar" alt="Your equipped character"/><div><label for="profile-name">Runner name</label><input id="profile-name" maxlength="16" autocomplete="nickname"/><button id="save-profile-btn">SAVE NAME</button><p id="profile-crew"></p></div></div>
+   <p id="profile-status" role="status"></p><div id="profile-stats" class="profile-stats"></div>
+   <section class="box-cabinet"><h3>MYSTERY BOX COLLECTION</h3><p>Collect the purple gift boxes on the track. Open them here after a run.</p><button id="open-box-btn">OPEN MYSTERY BOX</button><p id="profile-opened"></p><p class="box-odds">Rewards: 70% +40 coins · 25% +100 coins · 5% random character. A duplicate character converts to 150 coins. No paid boxes.</p><div id="box-result" role="status" aria-live="polite"></div></section>
+   <h3 class="hub-heading">LOCATION PASSPORT</h3><div id="profile-locations" class="location-grid"></div>
+   <h3 class="hub-heading">LAST FIVE RUNS</h3><ul id="profile-runs" class="profile-runs"></ul><button id="close-profile-btn">BACK TO THE GAME</button>
+  </section>
+ </div>
+ <div id="settings-overlay" class="hidden feature-overlay">
+  <section class="feature-panel hub-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+   <p class="eyebrow">MAKE IT FEEL RIGHT</p><h2 id="settings-title">SETTINGS</h2>
+   <label class="setting-row">Mute all audio<input id="setting-muted" type="checkbox"/></label>
+   <label class="setting-row">Background music<input id="setting-music" type="checkbox"/></label>
+   <label class="setting-row">Sound effects<input id="setting-effects" type="checkbox"/></label>
+   <label class="setting-row">Volume<input id="setting-volume" type="range" min="0" max="100" step="5"/></label>
+   <label class="setting-row">Swipe sensitivity<select id="setting-sensitivity"><option value="10">Super sensitive</option><option value="14">Snappy</option><option value="24">Steady</option></select></label>
+   <label class="setting-row">Graphics<select id="setting-quality"><option value="auto">Auto</option><option value="low">Low · lighter rendering</option><option value="high">High · sharper rendering</option></select></label>
+   <label class="setting-row">Reduce decorative motion<input id="setting-reducedMotion" type="checkbox"/></label>
+   <label class="setting-row">Opening police chase<input id="setting-chaseIntro" type="checkbox"/></label>
+   <p class="feature-note">These settings keep your progress and purchases.</p><button id="save-settings-btn">SAVE SETTINGS</button><p id="settings-status" role="status" aria-live="polite"></p><button id="close-settings-btn">BACK TO THE GAME</button>
+  </section>
+ </div>
+
 	<div id="share-overlay" class="hidden">
 		<section class="share-panel" role="dialog" aria-modal="true" aria-labelledby="share-title">
 			<p class="eyebrow">MAKE IT A CHALLENGE</p>
@@ -102,7 +127,7 @@
 	<div id="ui-layer">
 		<div id="offline-status" role="status" aria-live="polite">PREPARING OFFLINE PLAY…</div>
 		<header class="arcade-header"><span class="brand">SUPER HOPPER<span class="brand-dot">®</span></span><span class="edition">THE NEVER-STOP ARCADE</span></header>
-		<div id="run-district" class="hidden"></div><div id="danger-display" class="hidden"></div><div id="rescue-countdown" class="hidden" role="status" aria-live="assertive">3</div>
+		<div id="run-district" class="hidden"></div><div id="chase-banner" class="hidden" role="status">CHASE ON · KEEP RUNNING!</div><div id="danger-display" class="hidden"></div><div id="rescue-countdown" class="hidden" role="status" aria-live="assertive">3</div>
 		<div id="board-btn" class="hidden" role="status" aria-label="Active ride">COLLECT A BOARD OR JETPACK</div>
 		<button id="pause-btn" class="hidden" aria-label="Pause game">Ⅱ</button>
 		<div id="pause-screen" class="center-screen hidden"><p class="eyebrow">TAKE A BREATHER</p><h1 class="title">ON PAUSE.</h1><p class="subtitle">Your next great run can wait.</p><button id="resume-btn">LET’S GO →</button></div>
@@ -153,7 +178,7 @@
 				<button id="leaderboard-btn">TOP HOPPERS ↗</button>
 				<button id="shop-btn">CHARACTERS + BOARDS ↗</button>
 				<button id="badges-btn">BRAGGING RIGHTS ↗</button>
-				<button id="missions-btn">DAILY MISSIONS ↗</button>
+				<button id="missions-btn">DAILY MISSIONS ↗</button><button id="profile-btn">MY PROFILE ↗</button><button id="settings-btn">SETTINGS ↗</button>
 			</div>
 			<label class="sensitivity-label" for="sensitivity">SWIPE FEEL <select id="sensitivity"><option value="10">SUPER SENSITIVE</option><option value="14" selected>SNAPPY</option><option value="24">STEADY</option></select></label>
 			<div class="play-tips"><span><b>01</b> SWIPE TO DODGE</span><span><b>02</b> TAP TO JUMP / TRICK</span><span><b>03</b> CHASE YOUR BEST</span></div>
@@ -162,14 +187,14 @@
 		<div id="game-over-screen" class="center-screen hidden">
 			<h1 class="title">GAME OVER</h1>
 			<p class="subtitle">SCORE: <span id="final-score">0</span></p>
-			<p id="coins-collected">🪙 <span id="final-coins">0</span> COINS</p>
+			<p id="result-progress" class="feature-note" role="status"></p><p id="coins-collected">🪙 <span id="final-coins">0</span> COINS</p>
 			<p id="personal-best" class="hidden"><span id="best-scope">DEVICE BEST</span>: <span id="best-score">0</span></p>
 			<button id="restart-btn">TRY AGAIN</button>
 			<div class="screen-btn-row">
 				<button id="leaderboard-btn-go">TOP HOPPERS ↗</button>
 				<button id="share-btn">📸 SHARE IMAGE</button>
 				<button id="shop-btn-go">CHARACTERS + BOARDS ↗</button><button id="missions-btn-go">MISSIONS ↗</button>
-				<button id="home-btn">🏠 HOME</button>
+				<button id="profile-btn-go">PROFILE + BOXES ↗</button><button id="settings-btn-go">SETTINGS ↗</button><button id="home-btn">🏠 HOME</button>
 			</div>
 		</div>
 

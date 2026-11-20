@@ -42,7 +42,9 @@ export const DISTRICTS = [
  {name:'COLOUR CITY',sky:0xbfeaff,ground:0x33344d,obstacle:0xff6540,decor:0x21f14f,pattern:'city',description:'Find your rhythm.'},
  {name:'NEON UNDERPASS',sky:0x18152e,ground:0x25233b,obstacle:0xff70b8,decor:0x62e9ff,pattern:'tunnel',description:'Two lanes blocked. Read the gap.'},
  {name:'SKYLINE ROOFTOPS',sky:0xadcfff,ground:0x677797,obstacle:0xffd83f,decor:0xb797ff,pattern:'roof',description:'Jump the rooftop barriers.'},
- {name:'SUNSET BOARDWALK',sky:0xffbc9b,ground:0x80625c,obstacle:0xff6540,decor:0x7ed5af,pattern:'pier',description:'Barrels ahead. Keep rolling.'}
+ {name:'SUNSET BOARDWALK',sky:0xffbc9b,ground:0x80625c,obstacle:0xff6540,decor:0x7ed5af,pattern:'pier',description:'Barrels ahead. Keep rolling.'},
+ {name:'BAMBOO GARDENS',sky:0xd2ecbd,ground:0x3d6755,obstacle:0xff9255,decor:0x76b94d,pattern:'forest',description:'A fresh route through the bamboo.'},
+ {name:'FROSTLINE PASS',sky:0xd8efff,ground:0x7fabc3,obstacle:0xe85c61,decor:0xcbe6ef,pattern:'snow',description:'Bright snow. Clear lines. Keep your footing.'}
 ];
 export function boardSVG(board) {
  const color='#'+board.color.toString(16).padStart(6,'0'),accent='#'+board.accent.toString(16).padStart(6,'0');
